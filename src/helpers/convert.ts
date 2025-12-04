@@ -1,9 +1,5 @@
 export const hashrateSuffix = (value: string): string => {
-    const match = value.match(/^([\d.]+)([KMGTPEZY])$/);
-    if (!match) return value;
-
-    const [, num, unit] = match;
-    return `${num}<span>${unit}h/s</span>`;
+    return abbreviateNumber(parseHashrate(value), true, 'h/s');
 }
 
 export const parseHashrate = (value: string): number => {
@@ -32,22 +28,30 @@ export const parseHashrate = (value: string): number => {
     return numericPart * multiplier;
 }
 
-export const abbreviateNumber = (value: number, withMarkup = true): string => {
+export const abbreviateNumber = (value: number, withMarkup: boolean = true, symbolSuffix: string = ''): string => {
     const units = [
+        { limit: 1e15, symbol: 'P' },
         { limit: 1e12, symbol: 'T' },
         { limit: 1e9, symbol: 'G' },
         { limit: 1e6, symbol: 'M' },
         { limit: 1e3, symbol: 'K' },
     ];
 
+    const format = (num: number) => {
+        if (Number.isInteger(num)) {
+            return num.toString();
+        }
+        return num.toFixed(2);
+    };
+
     for (const { limit, symbol } of units) {
         if (value >= limit) {
-            const formatted = parseFloat((value / limit).toFixed(2)).toString();
-            return formatted + (withMarkup ? `<span>${symbol}</span>` : ` ${symbol}`);
+            const formatted = format(value / limit);
+            return formatted + (withMarkup ? `<span>${symbol}${symbolSuffix}</span>` : ` ${symbol}${symbolSuffix}`);
         }
     }
 
-    return parseFloat(value.toFixed(2)).toString();
+    return format(value);
 };
 
 export const secondsToDHM = (s: number): string => {
