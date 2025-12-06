@@ -1,38 +1,75 @@
-import './Footer.scss';
-import Logo from '../images/logo.svg';
+import React from 'react';
 import { BASSIN_STRATUM_PORT, POLL_INTERVAL_SECONDS } from '../helpers/constants';
 import { Tooltip } from './Tooltip';
+import LogoUrl from '../images/logo.svg';
+import './Footer.scss';
 
 interface TimerProps {
     timer: number;
 }
 
+const LS_KEY = 'theme';
+
 export default function Footer({ timer }: TimerProps) {
     const progress = Math.max(0, 100 - (timer / POLL_INTERVAL_SECONDS) * 100);
     const progressStyle = { width: `${progress.toFixed(2)}%` };
+
+    const isDarkThemeEnabled = React.useCallback(() => {
+        const savedTheme = localStorage.getItem(LS_KEY);
+        if (savedTheme) {
+            return savedTheme === 'dark';
+        }
+        return window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
+    }, []);
+
+    const [isDarkMode, setIsDarkMode] = React.useState<boolean>(() => isDarkThemeEnabled());
+
+    React.useLayoutEffect(() => {
+        localStorage.setItem(LS_KEY, isDarkMode ? 'dark' : 'light');
+        document.documentElement.setAttribute('data-theme', isDarkMode ? 'dark' : 'light');
+    }, [isDarkMode]);
+
+    const toggleTheme = () => {
+        setIsDarkMode(prev => !prev);
+    };
 
     return (
         <footer className="footer">
             <div className="progress" style={progressStyle} />
 
             <div className="wrapper">
-                <figure>
-                    <img src={Logo} width={48} height={48} alt="BASSIN Logo" />
+                <figure className='logo'>
+                    <img src={LogoUrl} width={48} height={48} alt="BASSIN Logo" />
                     <figcaption className="font-monospace">BASSIN</figcaption>
                 </figure>
 
-                <div>
+                <div className="actions">
                     <p>
                         <span>Stratum Host</span>
                         <code>{`${window.location.hostname}:${BASSIN_STRATUM_PORT}`}</code>
                     </p>
 
+                    <Tooltip text="Theme">
+                        <div className="switch" onClick={toggleTheme}>
+                            <figure>
+                                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32">
+                                    <path d="M16 8c-4.4 0-8 3.6-8 8s3.6 8 8 8 8-3.6 8-8-3.6-8-8-8zM16 7c.6 0 1-.4 1-1V3c0-.6-.4-1-1-1s-1 .4-1 1v3c0 .6.4 1 1 1zM8.2 9.6c.2.2.5.3.7.3s.5-.1.7-.3c.4-.4.4-1 0-1.4L7.5 6.1c-.4-.4-1-.4-1.4 0s-.4 1 0 1.4l2.1 2.1zM7 16c0-.6-.4-1-1-1H3c-.6 0-1 .4-1 1s.4 1 1 1h3c.6 0 1-.4 1-1zM8.2 22.4l-2.1 2.1c-.4.4-.4 1 0 1.4.2.2.5.3.7.3s.5-.1.7-.3l2.1-2.1c.4-.4.4-1 0-1.4s-1-.4-1.4 0zM16 25c-.6 0-1 .4-1 1v3c0 .6.4 1 1 1s1-.4 1-1v-3c0-.6-.4-1-1-1zM23.8 22.4c-.4-.4-1-.4-1.4 0s-.4 1 0 1.4l2.1 2.1c.2.2.5.3.7.3s.5-.1.7-.3c.4-.4.4-1 0-1.4l-2.1-2.1zM29 15h-3c-.6 0-1 .4-1 1s.4 1 1 1h3c.6 0 1-.4 1-1s-.4-1-1-1zM23.1 9.9c.3 0 .5-.1.7-.3l2.1-2.1c.4-.4.4-1 0-1.4s-1-.4-1.4 0l-2.1 2.1c-.4.4-.4 1 0 1.4.2.2.4.3.7.3z"/>
+                                </svg>
+                                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">
+                                    <path d="M12 22c5.523 0 10-4.477 10-10 0-.463-.694-.54-.933-.143a6.5 6.5 0 1 1-8.924-8.924C12.54 2.693 12.463 2 12 2 6.477 2 2 6.477 2 12s4.477 10 10 10Z" />
+                                </svg>
+                            </figure>
+                        </div>
+                    </Tooltip>
+
                     <Tooltip text="GitHub">
-                        <a href="https://github.com/duckaxe/bassin">
-                            <svg viewBox="0 0 98 98" xmlns="http://www.w3.org/2000/svg">
-                                <path fillRule="evenodd" clipRule="evenodd" d="M48.854 0C21.839 0 0 22 0 49.217c0 21.756 13.993 40.172 33.405 46.69 2.427.49 3.316-1.059 3.316-2.362 0-1.141-.08-5.052-.08-9.127-13.59 2.934-16.42-5.867-16.42-5.867-2.184-5.704-5.42-7.17-5.42-7.17-4.448-3.015.324-3.015.324-3.015 4.934.326 7.523 5.052 7.523 5.052 4.367 7.496 11.404 5.378 14.235 4.074.404-3.178 1.699-5.378 3.074-6.6-10.839-1.141-22.243-5.378-22.243-24.283 0-5.378 1.94-9.778 5.014-13.2-.485-1.222-2.184-6.275.486-13.038 0 0 4.125-1.304 13.426 5.052a46.97 46.97 0 0 1 12.214-1.63c4.125 0 8.33.571 12.213 1.63 9.302-6.356 13.427-5.052 13.427-5.052 2.67 6.763.97 11.816.485 13.038 3.155 3.422 5.015 7.822 5.015 13.2 0 18.905-11.404 23.06-22.324 24.283 1.78 1.548 3.316 4.481 3.316 9.126 0 6.6-.08 11.897-.08 13.526 0 1.304.89 2.853 3.316 2.364 19.412-6.52 33.405-24.935 33.405-46.691C97.707 22 75.788 0 48.854 0z" />
-                            </svg>
-                        </a>
+                        <div className="github">
+                            <a href="https://github.com/duckaxe/bassin">
+                                <svg viewBox="0 0 98 98" xmlns="http://www.w3.org/2000/svg">
+                                    <path fillRule="evenodd" clipRule="evenodd" d="M48.854 0C21.839 0 0 22 0 49.217c0 21.756 13.993 40.172 33.405 46.69 2.427.49 3.316-1.059 3.316-2.362 0-1.141-.08-5.052-.08-9.127-13.59 2.934-16.42-5.867-16.42-5.867-2.184-5.704-5.42-7.17-5.42-7.17-4.448-3.015.324-3.015.324-3.015 4.934.326 7.523 5.052 7.523 5.052 4.367 7.496 11.404 5.378 14.235 4.074.404-3.178 1.699-5.378 3.074-6.6-10.839-1.141-22.243-5.378-22.243-24.283 0-5.378 1.94-9.778 5.014-13.2-.485-1.222-2.184-6.275.486-13.038 0 0 4.125-1.304 13.426 5.052a46.97 46.97 0 0 1 12.214-1.63c4.125 0 8.33.571 12.213 1.63 9.302-6.356 13.427-5.052 13.427-5.052 2.67 6.763.97 11.816.485 13.038 3.155 3.422 5.015 7.822 5.015 13.2 0 18.905-11.404 23.06-22.324 24.283 1.78 1.548 3.316 4.481 3.316 9.126 0 6.6-.08 11.897-.08 13.526 0 1.304.89 2.853 3.316 2.364 19.412-6.52 33.405-24.935 33.405-46.691C97.707 22 75.788 0 48.854 0z" />
+                                </svg>
+                            </a>
+                        </div>
                     </Tooltip>
                 </div>
             </div>

@@ -32,10 +32,11 @@ footer {
         display: block;
     }
 
-    figure {
+    .logo {
         display: flex;
         position: relative;
         top: 0.75rem;
+        left: -0.85rem;
 
         figcaption {
             font-size: 0.85rem;
@@ -45,7 +46,7 @@ footer {
         }
     }
 
-    div {
+    .actions {
         display: flex;
         align-items: center;
         gap: 1.25rem;
@@ -61,16 +62,64 @@ footer {
             color: var(--color-grey);
             pointer-events: none;
         }
+
+        svg {
+            fill: var(--color-grey);
+        }
     }
 
-    svg {
-        width: 1.5rem;
-        height: 1.5rem;
-        fill: var(--color-grey);
-        transition: fill 250ms;
+    .switch {
+        width: 2rem;
+        height: 1.25rem;
+        cursor: pointer;
+        background-color: var(--color-grey);
+        border-radius: 2rem;
+        position: relative;
 
-        &:hover {
-            fill: var(--color-front);
+        figure {
+            height: 1rem;
+            width: 1rem;
+            left: 0.125rem;
+            top: 0.125rem;
+            position: absolute;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            background-color: var(--color-back);
+            border-radius: 50%;
+            transition: 0.25s;
+
+            svg {
+                width: 0.75rem;
+                height: 0.75rem;
+
+                &:first-child {
+                    display: block;
+                }
+                &:last-child {
+                    display: none;
+                }
+            }
+
+            [data-theme="dark"] & {
+                transform: translateX(0.75rem);
+
+                svg {
+                    &:first-child {
+                        display: none;
+                    }
+                    &:last-child {
+                        display: block;
+                    }
+                }
+            }
+        }
+    }
+
+    .github {
+        svg {
+            width: 1.25rem;
+            height: 1.25rem;
         }
     }
 }

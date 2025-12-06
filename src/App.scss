@@ -38,14 +38,12 @@
 	--color-red: #ff3434;
 }
 
-@media (prefers-color-scheme: dark) {
-	:root {
-		--color-front: #fff;
-		--color-back: rgb(30, 30, 30);
-		--color-pool: rgb(83, 213, 253);
-		--color-grey: #919eab;
-		--color-light-grey: #444;
-	}
+[data-theme="dark"] {
+	--color-front: #fff;
+	--color-back: rgb(30, 30, 30);
+	--color-pool: rgb(83, 213, 253);
+	--color-grey: #919eab;
+	--color-light-grey: #444;
 }
 
 * {
@@ -80,4 +78,5 @@ button {
 	outline: none;
 	border: 0;
 	background: none;
+	cursor: pointer;
 }
