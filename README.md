@@ -5,4 +5,3 @@
 * Install `npm i`
 * Run dev `npm run dev`
 * Build prod `npm run build`
-* 
