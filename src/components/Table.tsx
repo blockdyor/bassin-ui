@@ -1,12 +1,13 @@
 import './Table.scss';
 import { Worker, User } from '../interfaces/users';
-import { hashrateSuffix, abbreviateNumber, diffToNowDHM, createMarkup } from '../helpers/convert';
+import { hashrateSuffix, abbreviateNumber, diffToNowDHM } from '../helpers/convert';
+import FormattedValue from './FormattedValue';
 
 interface TableProps {
     user: User
 }
 
-export default function Divider({ user }: TableProps) {
+export default function Table({ user }: TableProps) {
     return (
         <table>
             <thead>
@@ -34,29 +35,29 @@ export default function Divider({ user }: TableProps) {
                 {user.worker.sort((a, b) => b.bestshare - a.bestshare).map((worker: Worker) => (
                     <tr key={worker.workername}>
                         <td scope="row">{worker.workername.split('.').pop()}</td>
-                        <td dangerouslySetInnerHTML={createMarkup(hashrateSuffix(worker.hashrate5m))} />
-                        <td dangerouslySetInnerHTML={createMarkup(hashrateSuffix(worker.hashrate1hr))} />
-                        <td dangerouslySetInnerHTML={createMarkup(hashrateSuffix(worker.hashrate1d))} />
-                        <td dangerouslySetInnerHTML={createMarkup(hashrateSuffix(worker.hashrate7d))} />
+                        <td><FormattedValue segments={hashrateSuffix(worker.hashrate5m)} /></td>
+                        <td><FormattedValue segments={hashrateSuffix(worker.hashrate1hr)} /></td>
+                        <td><FormattedValue segments={hashrateSuffix(worker.hashrate1d)} /></td>
+                        <td><FormattedValue segments={hashrateSuffix(worker.hashrate7d)} /></td>
                         <td></td>
-                        <td dangerouslySetInnerHTML={createMarkup(abbreviateNumber(worker.bestshare))} />
-                        <td dangerouslySetInnerHTML={createMarkup(abbreviateNumber(worker.bestever))} />
-                        <td dangerouslySetInnerHTML={createMarkup(abbreviateNumber(worker.shares))} />
-                        <td dangerouslySetInnerHTML={createMarkup(diffToNowDHM(worker.lastshare))} />
+                        <td><FormattedValue segments={abbreviateNumber(worker.bestshare)} /></td>
+                        <td><FormattedValue segments={abbreviateNumber(worker.bestever)} /></td>
+                        <td><FormattedValue segments={abbreviateNumber(worker.shares)} /></td>
+                        <td><FormattedValue segments={diffToNowDHM(worker.lastshare)} /></td>
                     </tr>
                 ))}
 
                 <tr>
                     <td scope="row"></td>
-                    <td dangerouslySetInnerHTML={createMarkup(hashrateSuffix(user.hashrate5m))} />
-                    <td dangerouslySetInnerHTML={createMarkup(hashrateSuffix(user.hashrate1hr))} />
-                    <td dangerouslySetInnerHTML={createMarkup(hashrateSuffix(user.hashrate1d))} />
-                    <td dangerouslySetInnerHTML={createMarkup(hashrateSuffix(user.hashrate7d))} />
+                    <td><FormattedValue segments={hashrateSuffix(user.hashrate5m)} /></td>
+                    <td><FormattedValue segments={hashrateSuffix(user.hashrate1hr)} /></td>
+                    <td><FormattedValue segments={hashrateSuffix(user.hashrate1d)} /></td>
+                    <td><FormattedValue segments={hashrateSuffix(user.hashrate7d)} /></td>
                     <td></td>
-                    <td dangerouslySetInnerHTML={createMarkup(abbreviateNumber(user.bestshare))} />
-                    <td dangerouslySetInnerHTML={createMarkup(abbreviateNumber(user.bestever))} />
-                    <td dangerouslySetInnerHTML={createMarkup(abbreviateNumber(user.shares))} />
-                    <td dangerouslySetInnerHTML={createMarkup(diffToNowDHM(user.lastshare))} />
+                    <td><FormattedValue segments={abbreviateNumber(user.bestshare)} /></td>
+                    <td><FormattedValue segments={abbreviateNumber(user.bestever)} /></td>
+                    <td><FormattedValue segments={abbreviateNumber(user.shares)} /></td>
+                    <td><FormattedValue segments={diffToNowDHM(user.lastshare)} /></td>
                 </tr>
             </tbody>
         </table>

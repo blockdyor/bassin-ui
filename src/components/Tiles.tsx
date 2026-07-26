@@ -37,7 +37,7 @@ export default function Tiles({ pool }: TilesProps) {
 						<Metric label={'Best'} headline={abbreviateNumber(pool.bestshare)} />
 					</li>
 					<li className="tile-item">
-						<Metric label={'/Second'} headline={`${pool.SPS1m}`} />
+						<Metric label={'/Second'} headline={[{ text: `${pool.SPS1m}` }]} />
 					</li>
 					<li className="tile-item">
 						<Metric label={'Accepted'} headline={abbreviateNumber(pool.accepted)} />
@@ -56,13 +56,13 @@ export default function Tiles({ pool }: TilesProps) {
 						<Metric label={'Uptime'} headline={secondsToDHM(pool.runtime)} />
 					</li>
 					<li className="tile-item">
-						<Metric label={`User${pool.Users !== 1 ? 's' : ''}`} headline={`${pool.Users}`} />
+						<Metric label={`User${pool.Users !== 1 ? 's' : ''}`} headline={[{ text: `${pool.Users}` }]} />
 					</li>
 					<li className="tile-item">
 						<Metric label={'Update'} headline={diffToNowDHM(pool.lastupdate)} />
 					</li>
 					<li className="tile-item">
-						<Metric label={`Worker${pool.Workers !== 1 ? 's' : ''}`} headline={`${pool.Workers}`} />
+						<Metric label={`Worker${pool.Workers !== 1 ? 's' : ''}`} headline={[{ text: `${pool.Workers}` }]} />
 					</li>
 				</ul>
 			</section>

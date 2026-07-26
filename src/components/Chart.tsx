@@ -1,6 +1,6 @@
 import './Chart.scss';
 import React from 'react';
-import { abbreviateNumber } from '../helpers/convert';
+import { abbreviateNumberPlain } from '../helpers/convert';
 import { Tooltip } from './Tooltip';
 
 interface ChartProps {
@@ -19,7 +19,7 @@ export default function Chart({ chart }: ChartProps) {
                     const end = currentValue ? currentValue / maxHashrate : 0;
 
                     return (
-                        <Tooltip key={index} text={abbreviateNumber(currentValue, false) + 'h/s'}>
+                        <Tooltip key={index} text={abbreviateNumberPlain(currentValue, 'h/s')}>
                             <li
 
                                 style={{

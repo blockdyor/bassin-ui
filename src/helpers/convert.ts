@@ -1,5 +1,11 @@
-export const hashrateSuffix = (value: string): string => {
-    return abbreviateNumber(parseHashrate(value), true, 'h/s');
+/**
+ * A small piece of formatted output.
+ * `sub: true` means "render this smaller, as a unit/suffix" (was previously a <span>).
+ * Components render these directly as text, nothing here ever becomes raw HTML.
+ */
+export interface Segment {
+    text: string;
+    sub?: boolean;
 }
 
 export const parseHashrate = (value: string): number => {
@@ -28,7 +34,7 @@ export const parseHashrate = (value: string): number => {
     return numericPart * multiplier;
 }
 
-export const abbreviateNumber = (value: number, withMarkup: boolean = true, symbolSuffix: string = ''): string => {
+export const abbreviateNumber = (value: number, symbolSuffix: string = ''): Segment[] => {
     const units = [
         { limit: 1e15, symbol: 'P' },
         { limit: 1e12, symbol: 'T' },
@@ -46,39 +52,69 @@ export const abbreviateNumber = (value: number, withMarkup: boolean = true, symb
 
     for (const { limit, symbol } of units) {
         if (value >= limit) {
-            const formatted = format(value / limit);
-            return formatted + (withMarkup ? `<span>${symbol}${symbolSuffix}</span>` : ` ${symbol}${symbolSuffix}`);
+            return [
+                { text: format(value / limit) },
+                { text: `${symbol}${symbolSuffix}`, sub: true },
+            ];
         }
     }
 
-    return format(value);
+    return symbolSuffix
+        ? [{ text: format(value) }, { text: symbolSuffix, sub: true }]
+        : [{ text: format(value) }];
 };
 
-export const secondsToDHM = (s: number): string => {
+/**
+ * Same as abbreviateNumber, but joined into one plain string.
+ * For places that need plain text (tooltips, alt text), not JSX.
+ */
+export const abbreviateNumberPlain = (value: number, symbolSuffix: string = ''): string => {
+    return abbreviateNumber(value, symbolSuffix)
+        .map((segment) => segment.text)
+        .join(' ');
+};
+
+export const hashrateSuffix = (value: string): Segment[] => {
+    return abbreviateNumber(parseHashrate(value), 'h/s');
+}
+
+export const secondsToDHM = (s: number): Segment[] => {
     const days = Math.floor(s / 86400);
     const hours = Math.floor((s % 86400) / 3600);
     const minutes = Math.floor((s % 3600) / 60);
 
     if (days) {
-        return `${days}<span>d</span> ${hours}<span>h</span>`;
+        return [
+            { text: `${days}` }, { text: 'd', sub: true },
+            { text: ` ${hours}` }, { text: 'h', sub: true },
+        ];
     } else if (hours) {
-        return `${hours}<span>h</span> ${minutes}<span>m</span>`;
+        return [
+            { text: `${hours}` }, { text: 'h', sub: true },
+            { text: ` ${minutes}` }, { text: 'm', sub: true },
+        ];
     } else {
-        return `${minutes}<span>m</span>`;
+        return [{ text: `${minutes}` }, { text: 'm', sub: true }];
     }
 }
 
-export const diffToNowDHM = (timestamp: number): string => {
+export const diffToNowDHM = (timestamp: number): Segment[] => {
     const diffTime = Math.floor(Date.now() / 1000) - timestamp;
 
-    return diffTime > 60 ? `${secondsToDHM(diffTime)} <span>ago</span>` : 'now';
+    if (diffTime <= 60) {
+        return [{ text: 'now' }];
+    }
+
+    return [...secondsToDHM(diffTime), { text: ' ago', sub: true }];
 }
 
-export const formatTime = (timestamp: number): string => {
-    return new Date(timestamp).toLocaleTimeString()
-        .replace(/\s?(AM|PM)/, (_, meridiem) => `<span>${meridiem}</span>`);
-}
+export const formatTime = (timestamp: number): Segment[] => {
+    const formatted = new Date(timestamp).toLocaleTimeString();
+    const match = formatted.match(/^(.*?)\s?(AM|PM)$/);
 
-export function createMarkup(dirty: string) {
-    return { __html: dirty };
+    if (!match) {
+        return [{ text: formatted }];
+    }
+
+    return [{ text: match[1] }, { text: match[2], sub: true }];
 }
