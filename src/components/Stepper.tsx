@@ -1,4 +1,5 @@
 import './Stepper.scss';
+import { useState } from 'react';
 import { BASSIN_STRATUM_PORT } from '../helpers/constants';
 
 interface StepperProps {
@@ -7,12 +8,28 @@ interface StepperProps {
 
 export default function Stepper({ step }: StepperProps) {
     const stratumHost = `${window.location.hostname}:${BASSIN_STRATUM_PORT}`;
+    const [copied, setCopied] = useState(false);
 
     const copyStratumAddress = async () => {
         try {
-            await navigator.clipboard.writeText(stratumHost);
-        } catch {
-            // ignore clipboard failures silently in the UI
+            if (navigator.clipboard?.writeText) {
+                await navigator.clipboard.writeText(stratumHost);
+            } else {
+                const textarea = document.createElement('textarea');
+                textarea.value = stratumHost;
+                textarea.setAttribute('readonly', '');
+                textarea.style.position = 'fixed';
+                textarea.style.left = '-9999px';
+                document.body.appendChild(textarea);
+                textarea.select();
+                document.execCommand('copy');
+                document.body.removeChild(textarea);
+            }
+
+            setCopied(true);
+            window.setTimeout(() => setCopied(false), 1200);
+        } catch (error) {
+            console.error('Failed to copy stratum address', error);
         }
     };
 
@@ -46,11 +63,16 @@ export default function Stepper({ step }: StepperProps) {
                                     <button
                                         type="button"
                                         className="copy-button"
-                                        aria-label="Copy stratum address"
+                                        aria-label={copied ? 'Copied stratum address' : 'Copy stratum address'}
+                                        title={copied ? 'Copied' : 'Copy stratum address'}
                                         onClick={copyStratumAddress}
                                     >
                                         <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
-                                            <path d="M16 1H4c-1.1 0-2 .9-2 2v14h2V3h12V1zm3 4H8c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h11c1.1 0 2-.9 2-2V7c0-1.1-.9-2-2-2zm0 16H8V7h11v14z" />
+                                            {copied ? (
+                                                <path d="M9 16.17 4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z" />
+                                            ) : (
+                                                <path d="M16 1H4c-1.1 0-2 .9-2 2v14h2V3h12V1zm3 4H8c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h11c1.1 0 2-.9 2-2V7c0-1.1-.9-2-2-2zm0 16H8V7h11v14z" />
+                                            )}
                                         </svg>
                                     </button>
                                 </td>
