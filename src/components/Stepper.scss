@@ -99,6 +99,52 @@
                     font-size: 0.85rem;
                 }
             }
+
+            .stratum-host-row {
+                display: inline-flex;
+                align-items: center;
+                gap: 0.5rem;
+                flex-wrap: wrap;
+            }
+
+            .copy-button {
+                margin-left: 0.25rem;
+                width: 1.85rem;
+                height: 1.85rem;
+                padding: 0;
+                border-radius: 0.5rem;
+                background: transparent;
+                color: var(--color-front);
+                border: none;
+                display: inline-flex;
+                align-items: center;
+                justify-content: center;
+                cursor: pointer;
+                transition: color 250ms, background-color 250ms;
+            }
+
+            .copy-button svg {
+                width: 1rem;
+                height: 1rem;
+                fill: currentColor;
+            }
+
+            .copy-button:hover,
+            .copy-button:focus {
+                color: var(--color-front);
+                background-color: rgba(0, 0, 0, 0.08);
+            }
+
+            [data-theme="dark"] .copy-button,
+            [data-theme="dark"] .copy-button:hover,
+            [data-theme="dark"] .copy-button:focus {
+                color: var(--color-front);
+            }
+
+            [data-theme="dark"] .copy-button:hover,
+            [data-theme="dark"] .copy-button:focus {
+                background-color: rgba(0, 0, 0, 0.18);
+            }
         }
     }
 
