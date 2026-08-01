@@ -1,4 +1,4 @@
-### [Bassin](https://github.com/duckaxe/bassin) UI
+### [Bassin](https://github.com/blockdyor/bassin) UI
 
 #### Commands
 
