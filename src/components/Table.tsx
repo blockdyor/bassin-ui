@@ -2,12 +2,18 @@ import './Table.scss';
 import { Worker, User } from '../interfaces/users';
 import { hashrateSuffix, abbreviateNumber, diffToNowDHM } from '../helpers/convert';
 import FormattedValue from './FormattedValue';
+import { Tooltip } from './Tooltip';
 
 interface TableProps {
     user: User
 }
 
 export default function Table({ user }: TableProps) {
+    const formatUtcTime = (timestamp: number) => {
+        if (!timestamp) return 'Never';
+        return new Date(timestamp * 1000).toISOString().replace('T', ' ').slice(0, 19) + ' UTC';
+    };
+
     return (
         <table>
             <thead>
@@ -43,7 +49,13 @@ export default function Table({ user }: TableProps) {
                         <td><FormattedValue segments={abbreviateNumber(worker.bestshare)} /></td>
                         <td><FormattedValue segments={abbreviateNumber(worker.bestever)} /></td>
                         <td><FormattedValue segments={abbreviateNumber(worker.shares)} /></td>
-                        <td><FormattedValue segments={diffToNowDHM(worker.lastshare)} /></td>
+                        <td>
+                            <Tooltip text={formatUtcTime(worker.lastshare)}>
+                                <div style={{ display: 'inline', cursor: 'help' }}>
+                                    <FormattedValue segments={diffToNowDHM(worker.lastshare)} />
+                                </div>
+                            </Tooltip>
+                        </td>
                     </tr>
                 ))}
 
@@ -57,7 +69,13 @@ export default function Table({ user }: TableProps) {
                     <td><FormattedValue segments={abbreviateNumber(user.bestshare)} /></td>
                     <td><FormattedValue segments={abbreviateNumber(user.bestever)} /></td>
                     <td><FormattedValue segments={abbreviateNumber(user.shares)} /></td>
-                    <td><FormattedValue segments={diffToNowDHM(user.lastshare)} /></td>
+                    <td>
+                        <Tooltip text={formatUtcTime(user.lastshare)}>
+                            <div style={{ display: 'inline', cursor: 'help' }}>
+                                <FormattedValue segments={diffToNowDHM(user.lastshare)} />
+                            </div>
+                        </Tooltip>
+                    </td>
                 </tr>
             </tbody>
         </table>

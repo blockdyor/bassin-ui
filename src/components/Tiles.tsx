@@ -1,5 +1,6 @@
 import './Tiles.scss';
 import Metric from './Metric';
+import { Tooltip } from './Tooltip';
 import { abbreviateNumber, diffToNowDHM, hashrateSuffix, secondsToDHM } from '../helpers/convert';
 import { Pool } from '../interfaces/pool';
 
@@ -37,7 +38,7 @@ export default function Tiles({ pool }: TilesProps) {
 						<Metric label={'Best'} headline={abbreviateNumber(pool.bestshare)} />
 					</li>
 					<li className="tile-item">
-						<Metric label={'/Second'} headline={[{ text: `${pool.SPS1m}` }]} />
+						<Metric label={'/Second'} headline={[{ text: pool.SPS1m.toFixed(4) }]} />
 					</li>
 					<li className="tile-item">
 						<Metric label={'Accepted'} headline={abbreviateNumber(pool.accepted)} />
@@ -56,13 +57,17 @@ export default function Tiles({ pool }: TilesProps) {
 						<Metric label={'Uptime'} headline={secondsToDHM(pool.runtime)} />
 					</li>
 					<li className="tile-item">
-						<Metric label={`User${pool.Users !== 1 ? 's' : ''}`} headline={[{ text: `${pool.Users}` }]} />
+						<Metric label={'User'} headline={[{ text: pool.Users.toString() }]} />
+					</li>
+					<li className="tile-item tile-item--has-tooltip">
+						<Tooltip text={new Date(pool.lastupdate * 1000).toISOString().replace('T', ' ').slice(0, 19) + ' UTC'}>
+							<div style={{ cursor: 'help' }}>
+								<Metric label={'Update'} headline={diffToNowDHM(pool.lastupdate)} />
+							</div>
+						</Tooltip>
 					</li>
 					<li className="tile-item">
-						<Metric label={'Update'} headline={diffToNowDHM(pool.lastupdate)} />
-					</li>
-					<li className="tile-item">
-						<Metric label={`Worker${pool.Workers !== 1 ? 's' : ''}`} headline={[{ text: `${pool.Workers}` }]} />
+						<Metric label={'Workers'} headline={[{ text: pool.Workers.toString() }]} />
 					</li>
 				</ul>
 			</section>

@@ -19,7 +19,7 @@
     }
 
     li {
-        cursor: pointer;
+        cursor: help;
         flex: 1 1 0;
         max-width: calc((100% - 59px) / 60); // 60 items + 59 gaps
         background: var(--color-light-grey);
