@@ -1,6 +1,6 @@
 import './Tooltip.scss';
 import React, { useState, useRef, ReactElement, ReactNode } from 'react';
-import ReactDOM from 'react-dom';
+import { createPortal } from 'react-dom';
 
 interface TooltipProps {
     children: ReactElement<{
@@ -72,7 +72,7 @@ export function Tooltip({ children, text }: TooltipProps) {
         <>
             {clonedChild}
             {visible &&
-                ReactDOM.createPortal(
+                createPortal(
                     <span
                         className="tooltip"
                         style={{
