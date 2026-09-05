@@ -52,7 +52,20 @@ export const fetchUsers = async (): Promise<User[]> => {
         const content = await response.text();
 
         const userMatches = [...content.matchAll(/href="([^"]+)"/g)];
-        const usernames = userMatches.map(([, match]) => match).filter(Boolean);
+        const usernames = Array.from(
+            new Set(
+                userMatches
+                    .map(([, match]) => match.replace(/\/$/, ''))
+                    .filter(
+                        (name) =>
+                            Boolean(name) &&
+                            name !== '..' &&
+                            name !== '.' &&
+                            !name.startsWith('?') &&
+                            /^[a-zA-Z0-9_.-]+$/.test(name)
+                    )
+            )
+        );
 
         if (usernames.length === 0) {
             return [];

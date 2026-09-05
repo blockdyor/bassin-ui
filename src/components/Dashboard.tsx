@@ -23,21 +23,22 @@ const Dashboard: React.FC<DashboardProps> = ({ pool, users, chart }) => {
 	const [visibleTables, setVisibleTables] = useState<Record<string, boolean>>({});
 
 	useLayoutEffect(() => {
-		const stored = window.localStorage.getItem(LS_KEY);
 		const initialState: Record<string, boolean> = {};
+		let storedObj: Record<string, boolean> | null = null;
 
-		if (stored) {
-			const storedObj = JSON.parse(stored) as Record<string, boolean>;
-			users.forEach(user => {
-				const shortName = user.username.slice(0, 21);
-				initialState[shortName] = storedObj[shortName] !== undefined ? storedObj[shortName] : true;
-			});
-		} else {
-			users.forEach(user => {
-				const shortName = user.username.slice(0, 21);
-				initialState[shortName] = true;
-			});
+		try {
+			const stored = window.localStorage.getItem(LS_KEY);
+			if (stored) {
+				storedObj = JSON.parse(stored) as Record<string, boolean>;
+			}
+		} catch (error) {
+			console.warn('Failed to parse localStorage item:', LS_KEY, error);
 		}
+
+		users.forEach(user => {
+			const shortName = user.username.slice(0, 21);
+			initialState[shortName] = storedObj && storedObj[shortName] !== undefined ? storedObj[shortName] : true;
+		});
 
 		setVisibleTables(initialState);
 	}, [users]);

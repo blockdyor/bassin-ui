@@ -12,8 +12,13 @@ export default function Divider({ username, onToggle, isExpanded }: DividerProps
     const LS_KEY = `userVisible_${username.slice(0, 21)}`;
 
     const [isUserVisible, setIsUserVisible] = useState<boolean>(() => {
-        const stored = localStorage.getItem(LS_KEY);
-        return stored !== null ? JSON.parse(stored) : true;
+        try {
+            const stored = localStorage.getItem(LS_KEY);
+            return stored !== null ? JSON.parse(stored) : true;
+        } catch (error) {
+            console.warn('Failed to parse localStorage item:', LS_KEY, error);
+            return true;
+        }
     });
 
     useEffect(() => {
