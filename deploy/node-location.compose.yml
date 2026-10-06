@@ -1,0 +1,20 @@
+# Merge with the existing Bassin compose file when upgrading to this UI image.
+# Requires the normal APP_DATA_DIR environment; does not alter mining or Bitcoin services.
+services:
+  ui:
+    image: bassin-ui:local
+    build:
+      context: ${BASSIN_UI_SOURCE:?Set BASSIN_UI_SOURCE to the absolute bassin-ui directory}
+      dockerfile: Dockerfile
+    entrypoint:
+      - /bin/sh
+      - -c
+      - cp -r /ui/* /www/ && exec python3 /opt/bassin/pool-location.py
+    user: "1000:1000"
+    volumes:
+      - ${APP_DATA_DIR}/data/config:/config:ro
+      - ${APP_DATA_DIR}/data/www:/www
+    depends_on:
+      init:
+        condition: service_completed_successfully
+    restart: on-failure

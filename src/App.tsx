@@ -1,70 +1,22 @@
-import './App.scss';
-import { useState, useEffect, useCallback } from 'react';
-import Footer from './components/Footer';
-import Dashboard from './components/Dashboard';
-import Loader from './components/Loader';
-import Stepper from './components/Stepper';
-import { fetchPool, fetchUsers } from './helpers/fetch';
-import { CHART_HISTORY_LENGTH, POLL_INTERVAL_SECONDS } from './helpers/constants';
-import { parseHashrate } from './helpers/convert';
-import { Pool } from './interfaces/pool';
-import { User } from './interfaces/users';
-
-const App = () => {
-  const [pool, setPool] = useState<Pool | null>(null);
-  const [users, setUsers] = useState<User[]>([]);
-  const [chart, setChart] = useState<number[]>([]);
-  const [timer, setTimer] = useState<number>(0);
-  const [error, setError] = useState<boolean>(false);
-
-  const loadData = useCallback(async () => {
-    try {
-      const [poolData, usersData] = await Promise.all([fetchPool(), fetchUsers()]);
-      setError(false);
-
-      if (poolData) {
-        setPool(poolData);
-        setChart((prev) => [...prev, parseHashrate(poolData.hashrate5m)].slice(-CHART_HISTORY_LENGTH));
-      }
-
-      if (usersData) {
-        setUsers(usersData);
-      }
-    } catch (error) {
-      console.error('Data fetch error:', error);
-      setError(true);
-    }
-  }, []);
-
-  useEffect(() => {
-    loadData();
-
-    const interval = setInterval(() => {
-      setTimer((prev) => {
-        const next = prev + 1;
-        if (next >= POLL_INTERVAL_SECONDS) {
-          loadData();
-          return 0;
-        }
-        return next;
-      });
-    }, 1000);
-
-    return () => clearInterval(interval);
-  }, [loadData]);
-
-  return (
-    <>
-      <Footer timer={timer} />
-      {error ? (
-        <Stepper step={1} />
-      ) : (!pool) ? (
-        <Loader />
-      ) : (
-        <Dashboard pool={pool} users={users} chart={chart} />
-      )}
-    </>
-  );
-};
-
-export default App;
+import {RouterProvider} from 'react-router-dom'
+import {QueryClient, QueryClientProvider} from '@tanstack/react-query'
+import {MotionConfig} from 'framer-motion'
+import {Toaster} from '@/components/ui/sonner'
+import {PoolProvider} from '@/hooks/PoolContext'
+import {ConfigProvider} from '@/hooks/ConfigContext'
+import {router} from '@/routes'
+const queryClient = new QueryClient()
+export default function App() {
+	return (
+		<QueryClientProvider client={queryClient}>
+			<MotionConfig reducedMotion='user'>
+				<PoolProvider>
+					<ConfigProvider>
+						<RouterProvider router={router} />
+						<Toaster richColors position='top-right' />
+					</ConfigProvider>
+				</PoolProvider>
+			</MotionConfig>
+		</QueryClientProvider>
+	)
+}
