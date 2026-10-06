@@ -1,5 +1,7 @@
 FROM alpine:3.22
 
-RUN mkdir -p /ui
+RUN apk add --no-cache python3 && mkdir -p /ui /opt/bassin
 
 COPY web/ /ui/
+
+COPY scripts/pool-location.py /opt/bassin/pool-location.py

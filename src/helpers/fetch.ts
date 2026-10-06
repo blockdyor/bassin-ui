@@ -1,88 +1,28 @@
-import { Pool } from '../interfaces/pool';
-import { User } from '../interfaces/users';
+import { parsePoolStatus, parseUser, parseUserList } from './status';
 
-/**
- * Wrapped fetch with error handling
- */
-const safeFetch = async (url: string): Promise<Response> => {
-    try {
-        const response = await fetch(url);
-        if (!response.ok) {
-            throw new Error(`Request failed: ${response.status} ${response.statusText}`);
-        }
-
-        return response;
-    } catch (err) {
-        throw err;
-    }
-};
-
-/**
- * Fetch and merge pool status, hashrate & shares data
- */
-export const fetchPool = async (): Promise<Pool> => {
-    try {
-        const response = await safeFetch(`/pool/pool.status?${Date.now()}`);
-        const text = await response.text();
-
-        const lines = text.trim().split('\n').filter(Boolean);
-        if (lines.length < 3) {
-            throw new Error('Malformed pool response');
-        }
-
-        const [pool, hashrate, shares] = lines.map((line) => JSON.parse(line));
-
-        return { ...pool, ...hashrate, ...shares };
-    } catch (error) {
-        console.error('Error in fetchPool:', error);
-        throw error instanceof Error ? error : new Error('Unknown error in fetchPool');
-    }
-};
-
-/**
- * Fetch all users listed in /users/, then fetch their data
- */
-export const fetchUsers = async (): Promise<User[]> => {
-    try {
-        const userListUrl = import.meta.env.DEV
-            ? '/users/users.status'
-            : `/users/?${Date.now()}`;
-
-        const response = await safeFetch(userListUrl);
-        const content = await response.text();
-
-        const userMatches = [...content.matchAll(/href="([^"]+)"/g)];
-        const usernames = Array.from(
-            new Set(
-                userMatches
-                    .map(([, match]) => match.replace(/\/$/, ''))
-                    .filter(
-                        (name) =>
-                            Boolean(name) &&
-                            name !== '..' &&
-                            name !== '.' &&
-                            !name.startsWith('?') &&
-                            /^[a-zA-Z0-9_.-]+$/.test(name)
-                    )
-            )
-        );
-
-        if (usernames.length === 0) {
-            return [];
-        }
-
-        const users = await Promise.all(
-            usernames.map(async (username) => {
-                const res = await safeFetch(`/users/${username}?${Date.now()}`);
-                const data = await res.json();
-
-                return { ...data, username } as User;
-            })
-        );
-
-        return users;
-    } catch (error) {
-        console.error('Error in fetchUsers:', error);
-        throw error instanceof Error ? error : new Error('Unknown error in fetchUsers');
-    }
-};
+export async function safeFetch(url: string, signal?: AbortSignal, headers?: HeadersInit): Promise<Response> {
+  const response = await fetch(url, {
+    cache: 'no-store',
+    signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(12000)]) : AbortSignal.timeout(12000),
+    headers,
+  });
+  if (!response.ok) throw new Error(`Request failed (${response.status})`);
+  return response;
+}
+export async function fetchPool(signal?: AbortSignal) {
+  const response = await safeFetch('/pool/pool.status', signal);
+  return parsePoolStatus(await response.text());
+}
+export async function fetchUsers(signal?: AbortSignal) {
+  const response = await safeFetch(import.meta.env.DEV ? '/users/users.status' : '/users/', signal);
+  const usernames = parseUserList(await response.text());
+  // Bound concurrent reads when a pool has many addresses.
+  const users = [];
+  for (let offset = 0; offset < usernames.length; offset += 8) {
+    users.push(...await Promise.all(usernames.slice(offset, offset + 8).map(async username => {
+      const response = await safeFetch(`/users/${encodeURIComponent(username)}`, signal);
+      return parseUser(await response.json(), username);
+    })));
+  }
+  return users;
+}
