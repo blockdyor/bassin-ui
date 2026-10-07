@@ -8,6 +8,7 @@ import InfoDialog from '@/components/shared/InfoDialog'
 import PoolNotice from '@/components/PoolNotice'
 import {usePoolData} from '@/hooks/PoolContext'
 import {age, duration, hashrate, number} from '@/helpers/display'
+import {utcDateTime, utcTime, utcIso} from '@/helpers/time'
 import {bestShareEver} from '@/helpers/mining'
 import {parseHashrate} from '@/helpers/convert'
 import InsightCard from './InsightsCard'
@@ -31,7 +32,7 @@ function Stat({label, value, description}: {label: string; value: string | numbe
 	)
 }
 export default function InsightsPage() {
-	const {pool, users, chart, usersError, loading} = usePoolData()
+	const {pool, users, chart, usersError, loading, now} = usePoolData()
 	const [query, setQuery] = useState('')
 	const [sort, setSort] = useState('hashrate')
 	const workers = users
@@ -47,6 +48,11 @@ export default function InsightsPage() {
 	return (
 		<div className='flex flex-col gap-10 pb-26'>
 			<PoolNotice />
+			<div className='flex justify-end -mb-6 text-xs text-white/70 tabular-nums'>
+				<time aria-label='Current UTC time' dateTime={utcIso(now)}>
+					{utcDateTime(now)}
+				</time>
+			</div>
 			<InsightCard className='p-0 overflow-hidden h-[240px] md:h-[120px]'>
 				<div className='h-full grid grid-cols-2 md:grid-cols-4 [&>*:nth-child(4n+2)]:bg-white/5 [&>*:nth-child(4n+3)]:bg-white/5 md:[&>*:nth-child(odd)]:bg-transparent md:[&>*:nth-child(even)]:bg-white/5'>
 					<Stat
@@ -74,7 +80,10 @@ export default function InsightsPage() {
 					/>
 				</div>
 			</InsightCard>
-			<ChartCard title='Pool Hashrate' legend={<span className='text-[12px] text-white/50'>5-minute average</span>}>
+			<ChartCard
+				title='Pool Hashrate'
+				legend={<span className='text-[12px] text-white/70'>5-minute average · UTC</span>}
+			>
 				{chart.length < 2 ? (
 					<div className='flex flex-col items-center justify-center w-full aspect-video text-white/40 px-6 text-center text-sm gap-3'>
 						<span>Collecting hashrate history</span>
@@ -93,22 +102,30 @@ export default function InsightsPage() {
 								<CartesianGrid {...DEFAULT_GRID_PROPS} />
 								<XAxis
 									dataKey='time'
-									tickFormatter={(v) => new Date(v * 1000).toLocaleTimeString([], {hour: '2-digit', minute: '2-digit'})}
-									stroke='#ffffff66'
+									tickFormatter={(v) => utcTime(Number(v) * 1000, false)}
+									stroke='#9fb2be'
 									fontSize={11}
 									axisLine={false}
 									tickLine={false}
 								/>
 								<YAxis
 									tickFormatter={(v) => number(v)}
-									stroke='#ffffff66'
+									stroke='#9fb2be'
 									fontSize={11}
 									axisLine={false}
 									tickLine={false}
 								/>
 								<Tooltip
-									contentStyle={{background: '#12212b', border: '1px solid #ffffff22', borderRadius: 8, fontSize: 12}}
-									labelFormatter={(v) => new Date(Number(v) * 1000).toLocaleTimeString()}
+									contentStyle={{
+										background: '#12212b',
+										color: '#ffffff',
+										border: '1px solid #6d899b',
+										borderRadius: 8,
+										fontSize: 12,
+									}}
+									labelStyle={{color: '#ffffff'}}
+									itemStyle={{color: '#76d9f5'}}
+									labelFormatter={(v) => utcDateTime(Number(v) * 1000)}
 									formatter={(v) => [`${number(Number(v))}H/s`, 'Hashrate']}
 								/>
 								<Area dataKey='value' stroke='#53cbea' fill='url(#hashrate-fill)' isAnimationActive={false} />
@@ -127,12 +144,16 @@ export default function InsightsPage() {
 							['Accepted difficulty', number(pool?.accepted)],
 							['Rejected difficulty', number(pool?.rejected)],
 							['Mining addresses', pool?.Users ?? '—'],
-							['Updated', pool ? age(pool.lastupdate) : '—'],
+							['Updated', pool ? utcDateTime(pool.lastupdate * 1000) : '—'],
 							['Share rate · 1 minute', pool ? `${pool.SPS1m.toFixed(3)} /s` : '—'],
 						].map(([label, value]) => (
 							<div key={label}>
 								<div className='text-white/40 mb-2'>{label}</div>
-								<div className='text-white/85 font-outfit text-lg'>{value}</div>
+								<div
+									className={`text-white/85 font-outfit ${label === 'Updated' ? 'text-sm tabular-nums' : 'text-lg'}`}
+								>
+									{value}
+								</div>
 							</div>
 						))}
 					</div>
@@ -228,7 +249,18 @@ export default function InsightsPage() {
 												<small className='block text-white/35'>{number(worker.bestever)}</small>
 											</td>
 											<td className='px-3'>{number(worker.shares)}</td>
-											<td className='px-3'>{age(worker.lastshare)}</td>
+											<td className='px-3'>
+												{worker.lastshare ? (
+													<>
+														<time dateTime={utcIso(worker.lastshare * 1000)}>
+															{utcDateTime(worker.lastshare * 1000)}
+														</time>
+														<small className='block text-white/60'>{age(worker.lastshare, now)}</small>
+													</>
+												) : (
+													'Never'
+												)}
+											</td>
 										</tr>
 									))}
 								</tbody>

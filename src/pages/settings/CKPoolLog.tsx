@@ -6,6 +6,7 @@ import {Input} from '@/components/ui/input'
 import {Checkbox} from '@/components/ui/checkbox'
 import FadeScrollArea from '@/components/shared/FadeScrollArea'
 import {fetchLog, logLevel} from '@/helpers/logs'
+import {utcDateTime} from '@/helpers/time'
 import {download} from '@/helpers/display'
 export default function CKPoolLog() {
 	const [text, setText] = useState(''),
@@ -130,7 +131,7 @@ export default function CKPoolLog() {
 			</div>
 			<div className='flex flex-wrap items-center justify-between gap-3'>
 				<span className='text-[11px] text-white/40'>
-					{lines.length} lines · latest 64 KiB / 400 lines{updated ? ` · ${updated.toLocaleTimeString()}` : ''}
+					{lines.length} lines · latest 64 KiB / 400 lines{updated ? ` · ${utcDateTime(updated.getTime())}` : ''}
 				</span>
 				<Button size='sm' disabled={!lines.length} onClick={() => download(lines.join('\n'), 'bassin-ckpool.log')}>
 					<Download />

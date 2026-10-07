@@ -1,6 +1,10 @@
 # Merge with the existing Bassin compose file when upgrading to this UI image.
 # Requires the normal APP_DATA_DIR environment; does not alter mining or Bitcoin services.
 services:
+  ckpool:
+    entrypoint: [/bin/sh, /opt/bassin/ckpool-start.sh, -k, -B, -c, /config/ckpool.conf]
+    volumes:
+      - ${BASSIN_UI_SOURCE:?Set BASSIN_UI_SOURCE to the absolute bassin-ui directory}/deploy/ckpool-start.sh:/opt/bassin/ckpool-start.sh:ro
   ui:
     image: bassin-ui:local
     build:

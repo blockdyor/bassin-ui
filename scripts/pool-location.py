@@ -64,7 +64,7 @@ def lookup(ip):
     if not public_ip(ip):
         return None
     url = 'https://ipwho.is/' + quote(ip, safe=':') + '?fields=ip,success,latitude,longitude'
-    with urlopen(Request(url, headers={'User-Agent':'Bassin-location/2.1.7'}), timeout=10) as response:
+    with urlopen(Request(url, headers={'User-Agent':'Bassin-location/2.1.8'}), timeout=10) as response:
         data = json.loads(response.read(65536))
     lat, lon = data.get('latitude'), data.get('longitude')
     if data.get('success') is not True or public_ip(data.get('ip')) != ip:

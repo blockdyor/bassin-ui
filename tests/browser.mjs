@@ -26,7 +26,7 @@ try {
 	await page.goto(base)
 	await page.getByRole('heading', {name: 'Bassin', exact: true}).waitFor()
 	await page.getByText('Running', {exact: true}).waitFor()
-	await page.locator('header').getByText('2.1.7', {exact: true}).first().waitFor()
+	await page.locator('header').getByText('2.1.8', {exact: true}).first().waitFor()
 	await page.waitForTimeout(8000)
 	const geometry = await page.locator('[data-testid=home-hero]').boundingBox()
 	assert.equal(Math.round(geometry.width), 768)

@@ -12,7 +12,7 @@ function demoFiles(): Plugin {
 		configureServer(server) {
 			server.middlewares.use((req, res, next) => {
 				const path = req.url?.split('?')[0]
-				if (path === '/pool/location.json') {
+				if (path === '/pool/location.json' || path === '/pool/version.json') {
 					res.setHeader('Content-Type', 'application/json')
 					res.end('null')
 					return
