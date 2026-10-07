@@ -1,3 +1,4 @@
+import {utcTime} from './time'
 /**
  * A small piece of formatted output.
  * `sub: true` means "render this smaller, as a unit/suffix" (was previously a <span>).
@@ -109,12 +110,5 @@ export const diffToNowDHM = (timestamp: number): Segment[] => {
 }
 
 export const formatTime = (timestamp: number): Segment[] => {
-    const formatted = new Date(timestamp).toLocaleTimeString();
-    const match = formatted.match(/^(.*?)\s?(AM|PM)$/);
-
-    if (!match) {
-        return [{ text: formatted }];
-    }
-
-    return [{ text: match[1] }, { text: match[2], sub: true }];
+    return [{ text: `${utcTime(timestamp)} UTC` }];
 }

@@ -34,6 +34,7 @@ The existing Docker image still copies `web/` into `/www/`. The dashboard works 
 | `/pool/pool.status` | CKPool newline-delimited JSON |
 | `/users/` | Directory index with relative user-file links |
 | `/users/<address>` | CKPool user/worker JSON |
+| `/pool/version.json` | Detected CKPool software version, published at pool startup |
 | `/pool/location.json` | Optional public Bitcoin node location metadata |
 | `/ckpool.log` | CKPool text log, with byte-range support for large files |
 
@@ -67,3 +68,11 @@ Only that explicit public node IP is sent to [ipwho.is](https://ipwhois.io/docum
 For an existing Compose deployment, `deploy/node-location.compose.yml` is an optional override that builds this UI, copies its static files, and runs the publisher. Set `BASSIN_UI_SOURCE` to this checkout’s absolute path and use the override alongside the existing Bassin Compose file and its usual environment (`APP_DATA_DIR`, etc.). Build `web/` first with `npm run build`. This override is supplied for deployment; it is not automatically enabled by the frontend update. Alternatively, run the helper with private `--config` and public `--output` paths on a server with Python 3. Do not expose the config directory through the web server.
 
 Publisher checks: `python3 -m unittest discover -s tests -p 'test_*.py'`. Globe browser checks: `node tests/globe-browser.mjs` with the same Playwright environment as above. Tests use mocked node metadata and do not query a live node or detect anyone’s IP.
+
+## UTC display and pool version
+
+Insights shows a live UTC clock. Chart ticks, hover timestamps, worker last-share timestamps, pool updates, and log refresh times use UTC independent of browser locale/timezone. Raw CKPool log lines remain unchanged; CKPool already writes UTC in the Bassin deployment. The chart tooltip has explicit light text and a dark background under either browser color preference.
+
+The header reads `/pool/version.json` once a minute. `deploy/ckpool-start.sh` extracts the compiled `ckpool/VERSION` identifier from the pool binary, atomically publishes only that version, and then executes CKPool with the original arguments. This is derived from the installed program, not a manually maintained UI constant, image tag, or guessed default. If detection is unavailable the header shows `CKPool —`. The supplied Compose override mounts this startup script into the pool container; the community-store deployment bundles the same script. Metadata publication failure does not prevent the pool from starting.
+
+`tests/utc-chart-browser.mjs` verifies UTC midnight rollover, chart hover contrast under light/dark preferences and different browser timezones, and version changes without a frontend rebuild. Use the same Playwright environment as the other browser checks.
