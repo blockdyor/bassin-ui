@@ -55,9 +55,9 @@ export default function InsightsPage() {
 						description='Worker count reported by your pool. The worker table can retain older workers after they disconnect.'
 					/>
 					<Stat
-						label='Best Share'
+						label='Round Best Share'
 						value={number(pool?.bestshare)}
-						description='The current best share difficulty reported by your pool. This counter can reset after a block is found.'
+						description='Highest share difficulty since the pool last found a block or its share counters were explicitly reset. Saved across pool restarts; this is not a session record.'
 					/>
 					<Stat
 						label='Best Share Ever'
@@ -159,7 +159,7 @@ export default function InsightsPage() {
 							onChange={(e) => setSort(e.target.value)}
 						>
 							<option value='hashrate'>Hashrate</option>
-							<option value='best'>Best share</option>
+							<option value='best'>Round best</option>
 							<option value='name'>Name</option>
 						</select>
 					</div>
@@ -186,13 +186,18 @@ export default function InsightsPage() {
 							<table className='w-full text-left text-[12px] whitespace-nowrap'>
 								<thead className='text-white/40 border-b border-white/10'>
 									<tr>
-										{['Worker', 'Hashrate · 5m', '1h / 24h / 7d', 'Best / best ever', 'Shares', 'Last share'].map(
-											(label) => (
-												<th className='font-normal px-3 py-3 first:pl-0' key={label}>
-													{label}
-												</th>
-											),
-										)}
+										{[
+											'Worker',
+											'Hashrate · 5m',
+											'1h / 24h / 7d',
+											'Best · round / all-time',
+											'Shares',
+											'Last share',
+										].map((label) => (
+											<th className='font-normal px-3 py-3 first:pl-0' key={label}>
+												{label}
+											</th>
+										))}
 									</tr>
 								</thead>
 								<tbody>
