@@ -36,7 +36,7 @@ try {
 			route.fulfill({json: {...users, worker: users.worker.map((w) => ({...w, lastshare: start / 1000}))}}),
 		)
 		await page.goto(base + '/#/insights')
-		await page.getByLabel('CKPool version', {exact: true}).getByText('· CKPool 9.8.7', {exact: true}).waitFor()
+		await page.getByLabel('CKPool version', {exact: true}).getByText('CKPool v9.8.7', {exact: true}).waitFor()
 		await page.getByText('gamma', {exact: true}).waitFor()
 		const clock = page.getByLabel('Current UTC time', {exact: true})
 		assert.match(await clock.textContent(), /^2026-10-07 23:59:\d{2} UTC$/)
@@ -67,11 +67,11 @@ try {
 		version = {software: 'ckpool', version: '10.0.0'}
 		stamp += 60
 		await page.clock.fastForward(60000)
-		await page.getByText('· CKPool 10.0.0', {exact: true}).waitFor()
+		await page.getByText('CKPool v10.0.0', {exact: true}).waitFor()
 		version = null
 		stamp += 60
 		await page.clock.fastForward(60000)
-		await page.getByText('· CKPool —', {exact: true}).waitFor()
+		await page.getByText('CKPool —', {exact: true}).waitFor()
 		await page.locator('a[href="#/settings"]').click()
 		await page.getByRole('tab', {name: 'Logs', exact: true}).click()
 		await page.getByText(/latest 64 KiB \/ 400 lines.*UTC/).waitFor()

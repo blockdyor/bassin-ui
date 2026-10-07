@@ -57,6 +57,10 @@ PLAYWRIGHT_MODULE=/absolute/path/to/playwright/index.mjs node tests/browser.mjs
 
 Optional `PLAYWRIGHT_CHROMIUM_EXECUTABLE` selects an installed Chromium. `BASSIN_TEST_URL` overrides `http://127.0.0.1:4174`. Screenshots go to `/tmp/bassin-ui-fork-review/`. Fixtures do not modify a real pool. `tests/upstream-reference.mjs` captures the original UI for comparison; it expects an upstream checkout at `/tmp/bassin-umbrel-reference` running on port 4180.
 
+`tests/mobile-browser.mjs` runs WebKit with iPhone SE, iPhone 13, and iPad Mini profiles. It checks portrait/landscape layouts, globe interaction and context-loss fallback, Worker Setup, repeated navigation, browser errors, and release of the two 3D renderers when leaving Home. Install Playwright's WebKit browser first, then use the same `PLAYWRIGHT_MODULE` setting. `BASSIN_BROWSER=chromium` runs the same suite in Chromium; `BASSIN_DEVICES` (comma-separated profile names) and `BASSIN_CYCLES` (default 10) select the coverage. It mocks pool responses and can also test a production preview using `BASSIN_TEST_URL=http://127.0.0.1:4173`. Screenshots go to `/tmp/bassin-mobile-review/`. Browser/device emulation cannot establish stability on physical iOS hardware under memory pressure.
+
+The globe explicitly disposes its controls, geometry, materials, render targets, and WebGL renderer on unmount. Touch devices use a single-resolution drawing buffer for both decorative canvases; the visible globe size and drag controls remain the same. The globe pauses while the page is hidden and uses the existing static globe fallback if its graphics context is lost. Returning to Home starts a fresh interactive globe.
+
 Round Best Share uses the pool’s saved `bestshare`: it survives restarts and resets when the pool finds a block or receives an explicit share reset. It is not a session record. Best Share Ever is the maximum `bestever` found in retained user and worker records, not a browser-local record or a fabricated pool status field. Removed records can remove historical highs. Settings includes the Bassin GitHub link.
 
 ## Bitcoin node location

@@ -23,16 +23,17 @@ export default function Header({className}: {className?: string}) {
 						Bassin
 					</h1>
 
-					{/* We gracefully handle loading and error states for no layout shift */}
-					<p className='flex flex-wrap gap-x-2 gap-y-1 text-[12px] md:text-[14px] leading-tight font-[400] text-white/60'>
-						<span>{BASSIN_VERSION}</span>
+					<p className='text-[14px] md:text-[16px] leading-none font-[400] text-white/35'>
+						<span className='whitespace-nowrap'>Bassin v{BASSIN_VERSION}</span>
+						{' · '}
 						<span
+							className='whitespace-nowrap'
 							aria-label='CKPool version'
 							title={
 								poolVersion && !isError ? 'Version detected from the installed pool binary' : 'Pool version unavailable'
 							}
 						>
-							· CKPool {isError ? '—' : (poolVersion ?? '—')}
+							CKPool {poolVersion && !isError ? `v${poolVersion}` : '—'}
 						</span>
 					</p>
 				</div>
