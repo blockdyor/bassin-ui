@@ -26,7 +26,7 @@ try {
 	await page.goto(base)
 	await page.getByRole('heading', {name: 'Bassin', exact: true}).waitFor()
 	await page.getByText('Running', {exact: true}).waitFor()
-	await page.locator('header').getByText('2.1.6', {exact: true}).first().waitFor()
+	await page.locator('header').getByText('2.1.7', {exact: true}).first().waitFor()
 	await page.waitForTimeout(8000)
 	const geometry = await page.locator('[data-testid=home-hero]').boundingBox()
 	assert.equal(Math.round(geometry.width), 768)
@@ -54,6 +54,8 @@ try {
 		await page.keyboard.press('Escape')
 		await nav('Insights')
 		await page.getByRole('heading', {name: 'Best Share Ever', exact: true}).waitFor()
+		await page.getByRole('heading', {name: 'Round Best Share', exact: true}).waitFor()
+		assert.equal(await page.getByRole('heading', {name: 'Best Share', exact: true}).count(), 0)
 		await page.getByText('gamma', {exact: true}).waitFor()
 		await page.getByRole('textbox', {name: 'Search workers or addresses'}).fill('gamma')
 		assert.equal(await page.locator('tbody tr').count(), 1)
@@ -100,6 +102,30 @@ try {
 		await page.getByRole('textbox', {name: 'Search settings'}).fill('blockpoll')
 		await page.getByRole('spinbutton', {name: 'Block Polling Interval'}).waitFor()
 		await page.getByRole('textbox', {name: 'Search settings'}).fill('')
+		await page.getByRole('tab', {name: 'Bitcoin Node', exact: true}).click()
+		for (const selector of [
+			'label[for="node-url"]',
+			'label[for="node-auth"]',
+			'label[for="node-pass"]',
+			'label[for="zmq"]',
+		]) {
+			assert.equal(
+				await page.locator(selector).evaluate((el) => getComputedStyle(el).color),
+				'rgb(255, 255, 255)',
+				'Node labels must remain readable on the dark card',
+			)
+		}
+		assert.equal(
+			await page.getByText('Block Notifications', {exact: true}).evaluate((el) => getComputedStyle(el).color),
+			'rgb(255, 255, 255)',
+		)
+		assert.equal(
+			await page
+				.getByRole('textbox', {name: 'RPC Host and Port', exact: true})
+				.evaluate((el) => getComputedStyle(el).color),
+			'rgb(255, 255, 255)',
+		)
+		await page.screenshot({path: `${output}/bitcoin-node-settings.png`})
 		await page.getByRole('tab', {name: 'Advanced', exact: true}).click()
 		await page.getByRole('textbox', {name: 'Pool configuration JSON'}).fill('{broken')
 		assert.equal(await page.getByRole('button', {name: 'Download config'}).isEnabled(), false)

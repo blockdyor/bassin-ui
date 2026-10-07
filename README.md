@@ -20,7 +20,7 @@ Development mode serves sample pool/user files with current timestamps and sampl
 ## Screens
 
 - **Home:** upstream globe panel and ring chart adapted to pool hashrate and accepted/rejected share difficulty. The five upstream-style 3D tiles show CKPool’s 1-minute, 5-minute, 1-hour, 24-hour and 7-day averages. The original geographic globe supports dragging and shows one pulsing blue marker for the public address reported by your Bitcoin node. Without usable node location data it shows no marker. Reduced-motion preferences disable rotation and pulsing; a static image is used without WebGL.
-- **Insights:** worker count, current best share, best share ever, share rate, uptime, sampled hashrate history, share totals, and a searchable/sortable worker table.
+- **Insights:** worker count, round best share, best share ever, share rate, uptime, sampled hashrate history, share totals, and a searchable/sortable worker table.
 - **Settings:** upstream settings layout with Mining, Bitcoin Node, Advanced, and Logs tabs. Import/edit/export `ckpool.conf`, preserving unknown fields and additional nodes. Validation checks known fields; CKPool remains authoritative for custom options.
 - **Logs:** refresh every five seconds, pause/resume, follow output, filter/search, and download visible lines. Reads at most 64 KiB and displays the latest 400 lines. Large files require suffix HTTP Range support. Logs are plain text.
 - **Connect:** upstream tabbed dialog and QR code adapted to Stratum and Bitcoin-address/worker credentials.
@@ -56,7 +56,7 @@ PLAYWRIGHT_MODULE=/absolute/path/to/playwright/index.mjs node tests/browser.mjs
 
 Optional `PLAYWRIGHT_CHROMIUM_EXECUTABLE` selects an installed Chromium. `BASSIN_TEST_URL` overrides `http://127.0.0.1:4174`. Screenshots go to `/tmp/bassin-ui-fork-review/`. Fixtures do not modify a real pool. `tests/upstream-reference.mjs` captures the original UI for comparison; it expects an upstream checkout at `/tmp/bassin-umbrel-reference` running on port 4180.
 
-Best Share Ever is the maximum `bestever` found in retained user and worker records, not a browser-local record or a fabricated pool status field. Removed records can remove historical highs. Settings includes the Bassin GitHub link.
+Round Best Share uses the pool’s saved `bestshare`: it survives restarts and resets when the pool finds a block or receives an explicit share reset. It is not a session record. Best Share Ever is the maximum `bestever` found in retained user and worker records, not a browser-local record or a fabricated pool status field. Removed records can remove historical highs. Settings includes the Bassin GitHub link.
 
 ## Bitcoin node location
 

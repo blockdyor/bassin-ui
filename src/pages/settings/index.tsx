@@ -188,7 +188,10 @@ export default function SettingsPage() {
 		toast.success('Configuration downloaded. Apply the file and restart Bassin.')
 	}
 	return (
-		<Card data-testid='settings-card' className='bg-card-gradient backdrop-blur-2xl border-none rounded-3xl py-4'>
+		<Card
+			data-testid='settings-card'
+			className='bg-card-gradient backdrop-blur-2xl border-none rounded-3xl py-4 text-white'
+		>
 			<GradientBorderFromTop />
 			<CardHeader>
 				<div className='flex items-center justify-between gap-3'>

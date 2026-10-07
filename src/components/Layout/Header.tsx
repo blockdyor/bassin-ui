@@ -12,7 +12,7 @@ export default function Header({className}: {className?: string}) {
 	return (
 		<header className={cn('flex items-end md:items-center justify-between mb-6 md:mb-8 w-full', className)}>
 			<div className='flex flex-row items-center gap-2.5 md:gap-3.5'>
-				<Logo aria-label='Bassin logo' className='w-[50px] md:w-[60px] h-[50px] md:h-[60px] shrink-0' />
+				<Logo aria-label='Bassin logo' className='w-[50px] md:w-[60px] h-[50px] md:h-[60px] shrink-0 rounded-[10px] md:rounded-[12px] overflow-hidden' />
 				<div>
 					<h1 className='font-outfit text-[22px] md:text-[28px] font-[400] bg-text-gradient bg-clip-text text-transparent leading-none pb-1'>
 						Bassin
