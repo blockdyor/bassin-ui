@@ -64,15 +64,18 @@ export default function PeersChart() {
 	})
 
 	return (
-		<Card className='flex flex-col bg-transparent border-none p-0'>
-			<CardHeader className='md:items-center md:justify-center p-0 -mb-4 md:mb-0'>
+		<Card className='flex flex-col w-full bg-transparent border-none p-0'>
+			<CardHeader className='md:items-center md:justify-center p-0 -mb-4 md:mb-0 max-[360px]:items-center max-[360px]:mb-0'>
 				<CardTitle className='font-outfit text-[16px] font-[500] bg-[linear-gradient(180deg,#ffffff_0%,rgba(255,255,255,0.64)_100%)] bg-clip-text text-transparent'>
 					Share quality
 				</CardTitle>
 			</CardHeader>
 
-			<CardContent className='flex flex-1 flex-row-reverse md:flex-col items-center pb-0 gap-8 p-0'>
-				<ChartContainer config={chartConfig} className='w-[150px] h-[150px] md:mt-[-10px] mt-[-30px]'>
+			<CardContent className='flex flex-1 flex-row-reverse md:flex-col max-[360px]:flex-col items-center pb-0 gap-2 md:gap-8 p-0'>
+				<ChartContainer
+					config={chartConfig}
+					className='w-[150px] h-[150px] shrink-0 md:mt-[-10px] mt-[-30px] max-[360px]:mt-0'
+				>
 					{/* TODO: figure out simple way to add a box shadow to the outer edge of each slice */}
 					{/* TODO: await isLoading false before animating the chart in */}
 					<PieChart>
@@ -140,7 +143,7 @@ export default function PeersChart() {
 								key={data.network}
 								onMouseEnter={() => setActiveIndex(index)}
 								onMouseLeave={() => setActiveIndex(null)}
-								className='flex w-full max-w-[10rem] justify-between items-center gap-4 cursor-pointer select-none'
+								className='flex w-full max-w-[10rem] justify-between items-center gap-2 md:gap-4 whitespace-nowrap cursor-pointer select-none'
 								style={hovered ? glowStyle(config.color) : undefined}
 							>
 								<span className='flex items-center gap-1'>

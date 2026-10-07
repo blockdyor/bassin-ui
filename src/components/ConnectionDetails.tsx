@@ -130,15 +130,15 @@ export default function ConnectionDetails() {
 						</TabsContent>
 						<TabsContent value='worker' className='mt-4 min-h-[310px] space-y-4'>
 							<p className='text-[13px] text-white/60'>
-								Use a Bitcoin address you control, followed by a dot and a name for this miner.
+								Use a Bitcoin address you control, followed by a dot and a unique worker name for each miner.
 							</p>
 							<div className='divide-y divide-white/6 rounded-xl bg-white/6'>
 								<Field label='Username' value='<bitcoin-address>.<worker-name>' />
 								<Field label='Password' value='x' />
 							</div>
 							<p className='text-[13px] text-white/60'>
-								In solo mode, your miner’s Bitcoin address receives the block reward if it finds a block. Use a unique
-								worker name for each miner.
+								If your miner finds a block, your Bitcoin address receives the full block reward, including transaction
+								fees. Bassin charges no pool commission.
 							</p>
 						</TabsContent>
 					</FadeScrollArea>

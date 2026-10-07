@@ -80,7 +80,12 @@ export default function HashrateBlocks() {
 				))}
 			</div>
 			<ErrorBoundary fallback={fallback}>
-				<Canvas fallback={fallback} orthographic camera={{position: [0, 0, 8], zoom: 50}}>
+				<Canvas
+					fallback={fallback}
+					dpr={window.matchMedia('(pointer: coarse)').matches ? 1 : [1, 2]}
+					orthographic
+					camera={{position: [0, 0, 8], zoom: 50}}
+				>
 					<ambientLight intensity={0.8} />
 					<directionalLight position={[5, 8, 3]} intensity={1.5} />
 					{windows.map(([key, label], index) => (
