@@ -8,7 +8,6 @@ import {Card, CardHeader, CardTitle, CardContent, CardFooter} from '@/components
 import {Tabs, TabsList, TabsTrigger} from '@/components/ui/tabs'
 import {Button} from '@/components/ui/button'
 import {Input} from '@/components/ui/input'
-import {Checkbox} from '@/components/ui/checkbox'
 import {GradientBorderFromTop} from '@/components/shared/GradientBorders'
 import FadeScrollArea from '@/components/shared/FadeScrollArea'
 import InfoDialog from '@/components/shared/InfoDialog'
@@ -16,7 +15,7 @@ import {useConfig} from '@/hooks/ConfigContext'
 import {parseConfig, validateConfig, type Config} from '@/helpers/config'
 import {download} from '@/helpers/display'
 import InputField from './InputField'
-import Toggle from './Toggle'
+import BitcoinNodeSettings from './BitcoinNodeSettings'
 import {BASSIN_GITHUB_URL} from '@/helpers/constants'
 import CKPoolLog from './CKPoolLog'
 const tabs = [
@@ -58,15 +57,6 @@ const fields = [
 		description: 'Your message in the coinbase of blocks you find. Maximum 38 UTF-8 bytes.',
 	},
 	{
-		key: 'blockpoll',
-		label: 'Block Polling Interval',
-		tab: 'advanced',
-		default: 100,
-		min: 1,
-		unit: 'ms',
-		description: 'How often to check for a new block when notifications are disabled.',
-	},
-	{
 		key: 'update_interval',
 		label: 'Work Update Interval',
 		tab: 'advanced',
@@ -87,8 +77,7 @@ export default function SettingsPage() {
 	const {raw, setRaw, baseline, setBaseline, source, setSource, dirty} = useConfig()
 	const [params, setParams] = useSearchParams()
 	const tab = tabs.some((t) => t.value === params.get('tab')) ? params.get('tab')! : 'mining'
-	const [query, setQuery] = useState(''),
-		[showPassword, setShowPassword] = useState(false)
+	const [query, setQuery] = useState('')
 	const file = useRef<HTMLInputElement>(null)
 	let config: Config = {},
 		parseError = ''
@@ -98,21 +87,21 @@ export default function SettingsPage() {
 		parseError = e instanceof Error ? e.message : 'Invalid JSON'
 	}
 	const errors = parseError ? [parseError] : validateConfig(config)
-	const nodes = Array.isArray(config.btcd) ? config.btcd : []
-	const node = nodes[0] && typeof nodes[0] === 'object' ? nodes[0] : {}
 	function change(key: string, value: unknown) {
 		const next = {...config}
 		if (value === undefined) delete next[key]
 		else next[key] = value
 		setRaw(JSON.stringify(next, null, 2))
 	}
-	function changeNode(key: string, value: unknown) {
-		change('btcd', [{...node, [key]: value}, ...nodes.slice(1)])
-	}
 	const search = query.trim().toLowerCase()
 	const shown = fields.filter((field) =>
 		search ? `${field.label} ${field.key}`.toLowerCase().includes(search) : field.tab === tab,
 	)
+	const showNode = search
+		? search.split(/\s+/).every((word) =>
+				'bitcoin core node rpc host port username password btcd auth pass zmq zmqblock hashblock notifications notify polling blockpoll interval'.includes(word),
+			)
+		: tab === 'node'
 	function fieldRow(field: (typeof fields)[number]) {
 		const numeric = typeof field.default === 'number'
 		return (
@@ -241,86 +230,13 @@ export default function SettingsPage() {
 						className='h-[calc(100dvh-455px)] md:h-[calc(100dvh-390px)] min-h-[120px] [--fade-top:#101b22] [--fade-bottom:#080e12]'
 					>
 						<div className='pt-6 px-0.5 pb-6'>
-							{search ? (
-								shown.length ? (
-									shown.map(fieldRow)
-								) : (
-									<p className='text-center text-white/60 text-sm'>No results found for “{query}”</p>
-								)
-							) : (
+							{search && !shown.length && !showNode && (
+								<p className='text-center text-white/60 text-sm'>No results found for “{query}”</p>
+							)}
+							{shown.map(fieldRow)}
+							{showNode && <BitcoinNodeSettings config={config} disabled={!!parseError} onChange={change} />}
+							{!search && (
 								<>
-									{shown.map(fieldRow)}
-									{tab === 'node' && (
-										<div className='space-y-6'>
-											{[
-												{key: 'url', label: 'RPC Host and Port', hint: 'host:8332'},
-												{key: 'auth', label: 'RPC Username', hint: 'Username'},
-												{key: 'pass', label: 'RPC Password', hint: 'Password'},
-											].map((field) => (
-												<div className='border-b border-white/20 pb-6' key={field.key}>
-													<div className='flex justify-between gap-4 items-center'>
-														<div>
-															<label htmlFor={`node-${field.key}`} className='text-[14px]'>
-																{field.label}
-															</label>
-															<div className='mt-1'>
-																<code className='text-[12px] text-white/50 bg-[#26343d] px-1 rounded-sm'>
-																	btcd[0].{field.key}
-																</code>
-															</div>
-														</div>
-														<InputField
-															id={`node-${field.key}`}
-															className='max-w-[50%]'
-															disabled={!!parseError}
-															autoComplete='off'
-															type={field.key === 'pass' && !showPassword ? 'password' : 'text'}
-															placeholder={field.hint}
-															value={typeof node[field.key] === 'string' ? node[field.key] : ''}
-															onChange={(e) => changeNode(field.key, e.target.value)}
-														/>
-													</div>
-												</div>
-											))}
-											<label className='flex gap-2 items-center text-xs text-white/60'>
-												<Checkbox checked={showPassword} onCheckedChange={(value) => setShowPassword(value === true)} />
-												Show RPC password
-											</label>
-											<div className='border-b border-white/20 pb-6'>
-												<div className='flex justify-between items-center mb-3'>
-													<div>
-														<p className='text-[14px]'>Block Notifications</p>
-														<code className='text-[12px] text-white/50 bg-[#26343d] px-1 rounded-sm'>notify</code>
-													</div>
-													<Toggle
-														name='Block notifications'
-														checked={node.notify === true}
-														disabled={!!parseError}
-														onToggle={(value) => changeNode('notify', value)}
-													/>
-												</div>
-												<p className='text-[13px] text-white/60'>Enable only when ZMQ or blocknotify is configured.</p>
-											</div>
-											<div>
-												<label htmlFor='zmq' className='text-[14px]'>
-													ZMQ Block Endpoint
-												</label>
-												<p className='text-[12px] text-white/50 mb-3'>zmqblock</p>
-												<InputField
-													id='zmq'
-													disabled={!!parseError}
-													placeholder='tcp://bitcoin:28332'
-													value={typeof config.zmqblock === 'string' ? config.zmqblock : ''}
-													onChange={(e) => change('zmqblock', e.target.value || undefined)}
-												/>
-											</div>
-											{nodes.length > 1 && (
-												<p className='text-[12px] text-white/50'>
-													{nodes.length - 1} additional node connection(s) preserved. Edit them in Advanced.
-												</p>
-											)}
-										</div>
-									)}
 									{tab === 'advanced' && (
 										<div>
 											<h3 className='font-outfit text-lg mb-2'>Custom Configuration</h3>
@@ -340,7 +256,7 @@ export default function SettingsPage() {
 									{tab === 'logs' && <CKPoolLog />}
 								</>
 							)}
-							{tab !== 'logs' && !search && (
+							{(tab !== 'logs' || search) && (
 								<>
 									<p className='text-[11px] text-white/40 mt-5 break-all'>
 										Editing {source}

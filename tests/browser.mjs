@@ -26,7 +26,7 @@ try {
 	await page.goto(base)
 	await page.getByRole('heading', {name: 'Bassin', exact: true}).waitFor()
 	await page.getByText('Running', {exact: true}).waitFor()
-	await page.locator('header').getByText('Bassin v2.1.9', {exact: true}).first().waitFor()
+	await page.locator('header').getByText('Bassin v2.1.10', {exact: true}).first().waitFor()
 	await page.waitForTimeout(8000)
 	const geometry = await page.locator('[data-testid=home-hero]').boundingBox()
 	assert.equal(Math.round(geometry.width), 768)
@@ -116,7 +116,7 @@ try {
 			)
 		}
 		assert.equal(
-			await page.getByText('Block Notifications', {exact: true}).evaluate((el) => getComputedStyle(el).color),
+			await page.getByText('Block notifications', {exact: true}).evaluate((el) => getComputedStyle(el).color),
 			'rgb(255, 255, 255)',
 		)
 		assert.equal(
