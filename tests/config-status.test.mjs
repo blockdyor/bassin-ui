@@ -48,3 +48,20 @@ test('coinbase limit uses UTF-8 bytes and ZMQ validates its endpoint', () => {
   assert.deepEqual(validateConfig({ ...config, btcsig: 'a'.repeat(38), zmqblock: 'tcp://node:28332' }), []);
   assert.ok(validateConfig({ ...config, zmqblock: 'http://node' }).length);
 });
+
+test('ZMQ accepts reachable TCP endpoints, IPv6, and omission for the CKPool default', () => {
+  for (const zmqblock of [undefined, 'tcp://bitcoin:28332', 'tcp://bitcoin_bitcoind_1:28332', 'tcp://192.168.1.20:1', 'tcp://node.example:65535', 'tcp://[::1]:28332', 'tcp://[2001:db8::1]:28332']) {
+    assert.deepEqual(validateConfig({...config, zmqblock}), [], String(zmqblock));
+  }
+});
+test('ZMQ rejects malformed addresses, bind wildcards, credentials, paths, and invalid ports', () => {
+  for (const zmqblock of ['', null, 28332, 'tcp://node:0', 'tcp://node:65536', 'tcp://node:-1', 'tcp://node:2.5', 'tcp://node:28332/path', 'tcp://node:28332?query', 'tcp://user:pass@node:28332', 'tcp://node :28332', 'tcp://node:28332\n', 'tcp://*:28332', 'tcp://0.0.0.0:28332', 'tcp://[::]:28332', 'tcp://[not-ipv6]:28332', 'tcp://2001:db8::1:28332', 'tcp://999.1.1.1:28332']) {
+    assert.ok(validateConfig({...config, zmqblock}).some(error => error.startsWith('ZMQ endpoint:')), String(zmqblock));
+  }
+});
+test('notification-only imports remain valid without an explicit ZMQ endpoint', () => {
+  // An external notifier can supply updates; do not force ZMQ or rewrite notify.
+  const imported = {...config, ipcmining: '/custom/mining.sock', custom: {keep: true}};
+  assert.deepEqual(validateConfig(imported), []);
+  assert.deepEqual(parseConfig(JSON.stringify(imported)), imported);
+});
