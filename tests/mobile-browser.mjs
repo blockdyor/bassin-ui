@@ -68,7 +68,7 @@ try {
 		await page.locator('[data-testid=pool-globe] canvas').waitFor()
 		await page.waitForTimeout(10000)
 		assert.equal(await page.getByTestId('pool-globe').getAttribute('data-marker-count'), '1')
-		assert.equal(await page.locator('header p').textContent(), 'Bassin v2.1.10 · CKPool v1.2.0')
+		assert.equal(await page.locator('header p').textContent(), 'Bassin v2.1.11 · CKPool v1.2.0')
 		const width = devices[device].viewport.width
 		for (const viewport of [
 			devices[device].viewport,
@@ -116,7 +116,7 @@ try {
 				}).length,
 			}))
 			console.log(engine, device, 'navigation cycle', i + 1, JSON.stringify(gpu))
-			assert.equal(gpu.active, 2, 'Navigation must not accumulate 3D contexts')
+			assert.equal(gpu.active, 1, 'Only the globe needs a 3D context; navigation must not accumulate contexts')
 			assert.deepEqual(errors, [])
 		}
 		await page.locator('a[href="#/insights"]').tap()
@@ -129,7 +129,7 @@ try {
 				}).length,
 		)
 		console.log(engine, device, 'active GPU contexts after leaving Home:', remaining)
-		assert.equal(remaining, 0, 'Leaving Home must release both 3D renderers (the shared font atlas uses WebGL1)')
+		assert.equal(remaining, 0, 'Leaving Home must release the globe renderer')
 		assert.deepEqual(warnings, [])
 		assert.deepEqual(errors, [])
 		await context.close()

@@ -4,7 +4,6 @@ import {Info} from 'lucide-react'
 import {Card, CardContent} from '@/components/ui/card'
 import {GradientBorderTopBottom, GradientBorderFromCorners} from '@/components/shared/GradientBorders'
 import InfoDialog from '@/components/shared/InfoDialog'
-import HorizontalFadeScroll from '@/components/shared/HorizontalFadeScroll'
 import PoolNotice from '@/components/PoolNotice'
 import {usePoolData} from '@/hooks/PoolContext'
 import {duration, hashrate} from '@/helpers/display'
@@ -12,7 +11,7 @@ import {usePoolLocation} from '@/hooks/usePoolLocation'
 import Globe from './Globe'
 import PeersChart from './PeersChart'
 import StatusDot from './StatusDot'
-import HashrateBlocks from './HashrateBlocks'
+import HashrateAverages from './HashrateAverages'
 
 export default function HomePage() {
 	const {pool, loading, error, stale} = usePoolData()
@@ -71,12 +70,7 @@ export default function HomePage() {
 					</div>
 				</CardContent>
 			</Card>
-			<div className='w-full mt-4'>
-				<span className='text-white/50 text-[14px] font-normal ml-4'>Pool Hashrate</span>
-				<HorizontalFadeScroll fadeColor='#080d10'>
-					<HashrateBlocks />
-				</HorizontalFadeScroll>
-			</div>
+			<HashrateAverages />
 		</>
 	)
 }
