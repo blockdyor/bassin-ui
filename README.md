@@ -28,7 +28,7 @@ Development mode serves sample pool/user files with current timestamps and sampl
 
 ## Current static deployment
 
-The existing Docker image still copies `web/` into `/www/`. The dashboard works with the existing static file server. The optional node-location publisher uses Python 3, included in the updated image. Keep the existing CKPool volumes and static file server. Production endpoints are:
+The image packages `web/` under `/ui/`. In the blockdyor community store, the UI service copies `/ui/*` into the shared `/www/` volume and starts the bundled Python node-location publisher. A separate static file server serves `/www/`. Keep the existing CKPool volumes and static file server. Production endpoints are:
 
 | Path | Content |
 | --- | --- |
@@ -68,9 +68,11 @@ Round Best Share uses the pool’s saved `bestshare`: it survives restarts and r
 
 The browser reads only `/pool/location.json`; it never detects the visitor’s IP or requests browser geolocation. `scripts/pool-location.py` reads the private `ckpool.conf` and asks configured Bitcoin nodes for [getnetworkinfo.localaddresses](https://bitcoincore.org/en/doc/29.0.0/rpc/network/getnetworkinfo/), falling back to [getpeerinfo.addrlocal](https://bitcoincore.org/en/doc/29.0.0/rpc/network/getpeerinfo/). Remote peer addresses are never used. Private, loopback, and Tor addresses produce no marker.
 
+For the location helper, HTTP RPC is limited to loopback, RFC 1918 IPv4, or IPv6 unique-local addresses. Use HTTPS for a public RPC endpoint.
+
 Only that explicit public node IP is sent to [ipwho.is](https://ipwhois.io/documentation) for approximate coordinates, cached for six hours. RPC credentials stay in the private config mount. The published file contains only source, public IP, coordinates and timestamp. If your Bitcoin node runs elsewhere, the marker represents that node’s location. Missing/invalid results clear the marker; the UI rejects metadata older than 48 hours.
 
-For an existing Compose deployment, `deploy/node-location.compose.yml` is an optional override that builds this UI, copies its static files, and runs the publisher. Set `BASSIN_UI_SOURCE` to this checkout’s absolute path and use the override alongside the existing Bassin Compose file and its usual environment (`APP_DATA_DIR`, etc.). Build `web/` first with `npm run build`. This override is supplied for deployment; it is not automatically enabled by the frontend update. Alternatively, run the helper with private `--config` and public `--output` paths on a server with Python 3. Do not expose the config directory through the web server.
+For an existing Compose deployment, `deploy/node-location.compose.yml` is an optional override that builds this UI, copies its static files, and runs the publisher. Set `BASSIN_UI_SOURCE` to this checkout’s absolute path and use the override alongside the existing Bassin Compose file and its usual environment (`APP_DATA_DIR`, etc.). Build `web/` first with `npm run build`. The community-store Compose file already runs the publisher; it does not need this override. Alternatively, run the helper with private `--config` and public `--output` paths on a server with Python 3. Do not expose the config directory through the web server.
 
 Publisher checks: `python3 -m unittest discover -s tests -p 'test_*.py'`. Globe browser checks: `node tests/globe-browser.mjs` with the same Playwright environment as above. Tests use mocked node metadata and do not query a live node or detect anyone’s IP.
 
