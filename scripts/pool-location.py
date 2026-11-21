@@ -8,6 +8,7 @@ import ipaddress
 import json
 import math
 import os
+import re
 
 from pathlib import Path
 import secrets
@@ -127,30 +128,50 @@ def resolve(config, previous=None, rpc_call=rpc, geolocate=lookup):
 
 
 @contextmanager
-def parent_directory(path):
-    directory = os.open(path.parent, os.O_DIRECTORY | os.O_NOFOLLOW)
+def parent_directory(path, create=False):
+    # Walk from a known descriptor; never follow links in intermediate directories.
+    flags = os.O_DIRECTORY | os.O_NOFOLLOW
+    directory = os.open('/' if path.is_absolute() else '.', flags)
     try:
+        for part in path.parent.parts:
+            if part == path.anchor:
+                continue
+            name = local_name(part)
+            if create:
+                try:
+                    os.mkdir(name, dir_fd=directory)
+                except FileExistsError:
+                    pass
+            child = os.open(name, flags, dir_fd=directory)
+            os.close(directory)
+            directory = child
         yield directory
     finally:
         os.close(directory)
 
 
+def local_name(part):
+    if part in ('.', '..') or not re.fullmatch(r'[^/\x00-\x1f]+', part):
+        raise ValueError('Expected a local filename component')
+    return part
+
+
 def read_json(path):
     with parent_directory(path) as directory:
-        with os.fdopen(os.open(path.name, os.O_RDONLY | os.O_NOFOLLOW, dir_fd=directory)) as file:
+        with os.fdopen(os.open(local_name(path.name), os.O_RDONLY | os.O_NOFOLLOW, dir_fd=directory)) as file:
             return json.load(file)
 
 
 def publish(path, value):
-    path.parent.mkdir(parents=True, exist_ok=True)
-    with parent_directory(path) as directory:
+    name = local_name(path.name)
+    with parent_directory(path, create=True) as directory:
         temporary = '.location-' + secrets.token_hex(16)
         # Public metadata is served by a separate reader; respect deployment umask.
         fd = os.open(temporary, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o644, dir_fd=directory)
         try:
             with os.fdopen(fd, 'w') as file:
                 json.dump(value, file, allow_nan=False)
-            os.replace(temporary, path.name, src_dir_fd=directory, dst_dir_fd=directory)
+            os.replace(temporary, name, src_dir_fd=directory, dst_dir_fd=directory)
         except BaseException:
             os.unlink(temporary, dir_fd=directory)
             raise
