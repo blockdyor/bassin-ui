@@ -6,7 +6,9 @@ This blockdyor fork of [duckaxe/bassin-ui](https://github.com/duckaxe/bassin-ui)
 
 ## Install Bassin on Umbrel
 
-Follow the [Bassin installation guide](https://github.com/blockdyor/bassin/blob/main/docs/getting-started.md) to choose a store, install the pool and connect a miner. The npm commands below are for developing the dashboard, not installing the pool.
+As of November 21, 2026, the Blockdyor community store ships Bassin 2.1.12. The official Umbrel store ships 2.1.4; [PR #6404](https://github.com/getumbrel/umbrel-apps/pull/6404) proposes 2.1.12 for that store.
+
+[See the dashboard in the Bassin README](https://github.com/blockdyor/bassin/blob/main/README.md) or follow the [installation guide](https://github.com/blockdyor/bassin/blob/main/docs/getting-started.md) to connect your miner. The npm commands below run the dashboard for development.
 
 ## Develop and verify
 
