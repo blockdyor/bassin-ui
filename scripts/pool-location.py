@@ -8,6 +8,7 @@ import ipaddress
 import json
 import math
 import os
+import re
 from pathlib import Path
 import secrets
 import socket
@@ -149,26 +150,33 @@ def publish(path, value):
             raise
 
 
+def deployment_file(value, default):
+    path = Path(value)
+    if path.parent != default.parent or not re.fullmatch(r'[A-Za-z0-9_-][A-Za-z0-9_.-]*', path.stem) or path.suffix != default.suffix:
+        raise argparse.ArgumentTypeError(f'expected a {default.suffix} file in {default.parent}')
+    return default.parent / path.name
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('--config', choices=[str(CONFIG)], default=str(CONFIG))
-    parser.add_argument('--output', choices=[str(OUTPUT)], default=str(OUTPUT))
+    parser.add_argument('--config', type=lambda value: deployment_file(value, CONFIG), default=CONFIG)
+    parser.add_argument('--output', type=lambda value: deployment_file(value, OUTPUT), default=OUTPUT)
     parser.add_argument('--interval', type=int, default=900)
     parser.add_argument('--once', action='store_true')
     args = parser.parse_args()
     while True:
         try:
-            config = read_json(CONFIG)
+            config = read_json(args.config)
             if not isinstance(config, dict):
                 raise ValueError('Invalid configuration')
             try:
-                previous = read_json(OUTPUT)
+                previous = read_json(args.output)
             except (OSError, ValueError):
                 previous = None
             location = resolve(config, previous)
         except (OSError, ValueError):
             location = None
-        publish(OUTPUT, location)
+        publish(args.output, location)
         if args.once:
             return
         time.sleep(max(60, args.interval))

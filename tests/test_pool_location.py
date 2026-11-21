@@ -55,6 +55,8 @@ class PoolLocationTest(unittest.TestCase):
             request.assert_not_called()
 
     def test_cli_rejects_non_deployment_paths(self):
+        for path, default in [('/config/custom.conf', m.CONFIG), ('/www/pool/custom.json', m.OUTPUT)]:
+            self.assertEqual(m.deployment_file(path, default), Path(path))
         import subprocess
         import sys
         for option in ('--config', '--output'):
