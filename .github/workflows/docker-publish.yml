@@ -32,6 +32,14 @@ jobs:
           npm run build
           test -z "$(git status --porcelain --untracked-files=all -- web)" || { git status --short -- web; exit 1; }
 
+      - name: Exercise dashboard in Chromium
+        run: |
+          npm install --prefix "$RUNNER_TEMP/browser" --ignore-scripts playwright-core@1.57.0
+          npm run dev &
+          trap 'kill $!' EXIT
+          curl --retry 20 --retry-connrefused --retry-delay 1 -fsS http://127.0.0.1:4174/ -o /dev/null
+          PLAYWRIGHT_MODULE="$RUNNER_TEMP/browser/node_modules/playwright-core/index.mjs" PLAYWRIGHT_CHROMIUM_EXECUTABLE="$(command -v google-chrome)" node tests/browser.mjs
+
   rebuild-container:
     if: github.event_name == 'push'
     needs: verify

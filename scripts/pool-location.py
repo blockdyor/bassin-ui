@@ -158,12 +158,12 @@ def local_name(part):
 
 def read_json(path):
     with parent_directory(path) as directory:
-        with os.fdopen(os.open(local_name(path.name), os.O_RDONLY | os.O_NOFOLLOW, dir_fd=directory)) as file:
+        with os.fdopen(os.open(local_name(os.path.basename(path)), os.O_RDONLY | os.O_NOFOLLOW, dir_fd=directory)) as file:
             return json.load(file)
 
 
 def publish(path, value):
-    name = local_name(path.name)
+    name = local_name(os.path.basename(path))
     with parent_directory(path, create=True) as directory:
         temporary = '.location-' + secrets.token_hex(16)
         # Public metadata is served by a separate reader; respect deployment umask.
