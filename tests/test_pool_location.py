@@ -55,14 +55,33 @@ class PoolLocationTest(unittest.TestCase):
             request.assert_not_called()
 
     def test_once_with_custom_paths(self):
+        from http.server import BaseHTTPRequestHandler, HTTPServer
         import subprocess
         import sys
-        with tempfile.TemporaryDirectory() as directory:
+        from threading import Thread
+        calls = []
+
+        class Node(BaseHTTPRequestHandler):
+            def do_POST(self):
+                calls.append(json.loads(self.rfile.read(int(self.headers['Content-Length'])))['method'])
+                self.send_response(200)
+                self.end_headers()
+                self.wfile.write(b'{"result": {}}' if calls[-1] == 'getnetworkinfo' else b'{"result": []}')
+
+        with tempfile.TemporaryDirectory() as directory, HTTPServer(('127.0.0.1', 0), Node) as node:
             root = Path(directory)
-            (root / 'operator.conf').write_text('{"btcd": []}')
-            subprocess.run([sys.executable, m.__file__, '--config', 'operator.conf',
-                            '--output', 'new/nested/status.json', '--once'], cwd=root,
-                           check=True, timeout=10)
+            rpc = {'url': f'127.0.0.1:{node.server_port}', 'auth': 'test', 'pass': 'fixture'}
+            (root / 'operator.conf').write_text(json.dumps({'btcd': [rpc]}))
+            server = Thread(target=node.serve_forever)
+            server.start()
+            try:
+                subprocess.run([sys.executable, m.__file__, '--config', str(root / 'operator.conf'),
+                                '--output', 'new/nested/status.json', '--once'], cwd=root,
+                               check=True, timeout=10)
+            finally:
+                node.shutdown()
+                server.join()
+            self.assertEqual(calls, ['getnetworkinfo', 'getpeerinfo'])
             self.assertIsNone(json.loads((root / 'new/nested/status.json').read_text()))
 
     def test_rpc_transport(self):
