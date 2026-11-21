@@ -1,18 +1,29 @@
 # Bassin UI
 
-A CKPool mining adaptation of the actual [Umbrel Bitcoin UI](https://github.com/getumbrel/umbrel-bitcoin/tree/master/apps/ui). It uses upstream components, Tailwind styles, DM Sans/Outfit fonts, floating dock, geographic globe, charts, settings controls, and dialogs, recolored with Bassin’s water palette. See [upstream provenance and licenses](THIRD_PARTY_NOTICES.md).
+Bassin UI is the web dashboard for a Bassin solo mining pool. It reads CKPool status files to show hashrate, workers, shares and logs. You can edit and export `ckpool.conf` in the browser; exporting does not change the running pool.
+
+This blockdyor fork of [duckaxe/bassin-ui](https://github.com/duckaxe/bassin-ui) adapts components and assets from the [Umbrel Bitcoin UI](https://github.com/getumbrel/umbrel-bitcoin/tree/2fe07948f99e101dbee95ce34e5947a69c441ee4/apps/ui). See [upstream provenance and licenses](THIRD_PARTY_NOTICES.md) for the source mapping and license terms.
+
+## Install Bassin on Umbrel
+
+Follow the [Bassin installation guide](https://github.com/blockdyor/bassin/blob/main/docs/getting-started.md) to choose a store, install the pool and connect a miner. The npm commands below are for developing the dashboard, not installing the pool.
 
 ## Develop and verify
 
 Use Node.js 22.18+ and npm. The displayed Bassin release is defined by `BASSIN_VERSION` in `src/helpers/constants.ts`.
 
 ```sh
-npm ci
-npm run dev
+npm ci --ignore-scripts
+npm run dev       # Sample dashboard at http://127.0.0.1:4174; Ctrl-C to stop
+```
+
+From the checkout, run the checks and preview the production build:
+
+```sh
 npm run typecheck
 npm test
-npm run build
-npm run preview
+npm run build     # Writes the static site to web/
+npm run preview   # Serves web/ at http://127.0.0.1:4173 without sample pool files
 ```
 
 Development mode serves sample pool/user files with current timestamps and sample logs, and labels the page as a preview. Production builds do not include sample data. Hashrate history starts with the first actual CKPool timestamp observed during the current visit; it does not manufacture historical points.
@@ -52,8 +63,10 @@ The default template is not exportable until the required Bitcoin RPC connection
 `tests/browser.mjs` checks the development preview’s layout against upstream geometry and exercises CKPool workflows, unavailable/stale states, config round trips, and mobile overflow. Supply Playwright separately from production dependencies:
 
 ```sh
-# With npm run dev running:
-PLAYWRIGHT_MODULE=/absolute/path/to/playwright/index.mjs node tests/browser.mjs
+# In another terminal, with npm run dev running and Playwright's Chromium installed:
+export PLAYWRIGHT_MODULE=/absolute/path/to/playwright/index.mjs
+node tests/browser.mjs                # Desktop and mobile dashboard screenshots
+node tests/notifications-browser.mjs  # Bitcoin node notification settings
 ```
 
 Optional `PLAYWRIGHT_CHROMIUM_EXECUTABLE` selects an installed Chromium. `BASSIN_TEST_URL` overrides `http://127.0.0.1:4174`. Each browser check prints its own private directory under the system temporary directory. Screenshots remain there for review; remove the directory when finished. Fixtures do not modify a real pool. For `tests/upstream-reference.mjs`, serve the upstream checkout on port 4180 and set `BASSIN_REFERENCE_SETTINGS_PATH` to its Vite module path (for example, `/@fs/home/me/bassin-umbrel-reference/libs/settings/index.ts`).
