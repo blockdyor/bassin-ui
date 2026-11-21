@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict'
-import {readFile, mkdir} from 'node:fs/promises'
+import {readFile} from 'node:fs/promises'
+import {createScreenshotDir} from './screenshots.mjs'
 const {chromium, webkit, devices} = await import(process.env.PLAYWRIGHT_MODULE || 'playwright')
 const engine = process.env.BASSIN_BROWSER || 'webkit'
 const browser = await (engine === 'webkit' ? webkit : chromium).launch({
@@ -7,8 +8,7 @@ const browser = await (engine === 'webkit' ? webkit : chromium).launch({
 	...(engine === 'chromium' ? {executablePath: process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE} : {}),
 })
 const base = process.env.BASSIN_TEST_URL || 'http://127.0.0.1:4174'
-const output = '/tmp/bassin-mobile-review'
-await mkdir(output, {recursive: true})
+const output = await createScreenshotDir()
 const fixture = await readFile(new URL('../src/demodata/pool/pool.status', import.meta.url), 'utf8')
 const users = await readFile(
 	new URL('../src/demodata/users/1BitcoinEaterAddressDontSendf59kuE', import.meta.url),
@@ -68,7 +68,7 @@ try {
 		await page.locator('[data-testid=pool-globe] canvas').waitFor()
 		await page.waitForTimeout(10000)
 		assert.equal(await page.getByTestId('pool-globe').getAttribute('data-marker-count'), '1')
-		assert.equal(await page.locator('header p').textContent(), 'Bassin v2.1.11 · CKPool v1.2.0')
+		assert.equal(await page.locator('header p').textContent(), 'Bassin v2.1.12 · CKPool v1.2.0')
 		const width = devices[device].viewport.width
 		for (const viewport of [
 			devices[device].viewport,

@@ -1,9 +1,9 @@
 import assert from 'node:assert/strict'
-import {readFile, mkdir} from 'node:fs/promises'
+import {readFile} from 'node:fs/promises'
+import {createScreenshotDir} from './screenshots.mjs'
 const {chromium} = await import(process.env.PLAYWRIGHT_MODULE || 'playwright')
 const base = process.env.BASSIN_TEST_URL || 'http://127.0.0.1:4174'
-const output = '/tmp/bassin-ui-fork-review'
-await mkdir(output, {recursive: true})
+const output = await createScreenshotDir()
 const browser = await chromium.launch({headless: true, executablePath: process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE})
 const context = await browser.newContext({viewport: {width: 1440, height: 1000}})
 const page = await context.newPage()
@@ -26,7 +26,7 @@ try {
 	await page.goto(base)
 	await page.getByRole('heading', {name: 'Bassin', exact: true}).waitFor()
 	await page.getByText('Running', {exact: true}).waitFor()
-	await page.locator('header').getByText('Bassin v2.1.11', {exact: true}).first().waitFor()
+	await page.locator('header').getByText('Bassin v2.1.12', {exact: true}).first().waitFor()
 	await page.waitForTimeout(8000)
 	const geometry = await page.locator('[data-testid=home-hero]').boundingBox()
 	assert.equal(Math.round(geometry.width), 768)
@@ -166,7 +166,6 @@ try {
 			'PASS: upstream geometry/fonts/dock, connection dialog, workers, configuration validation/preservation/export, logs, 390px/320px layouts, error and stale states.',
 		)
 	}
-	console.log(`Screenshots: ${output}`)
 } finally {
 	await browser.close()
 }

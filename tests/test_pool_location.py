@@ -54,6 +54,55 @@ class PoolLocationTest(unittest.TestCase):
             self.assertIsNone(m.lookup('127.0.0.1'))
             request.assert_not_called()
 
+    def test_cli_rejects_non_deployment_paths(self):
+        import subprocess
+        import sys
+        for option in ('--config', '--output'):
+            with self.subTest(option=option), tempfile.TemporaryDirectory() as directory:
+                result = subprocess.run([sys.executable, m.__file__, option, directory, '--help'],
+                                        capture_output=True, text=True)
+                self.assertEqual(result.returncode, 2)
+                self.assertIn(option, result.stderr)
+
+    def test_rpc_transport(self):
+        import socket
+        from unittest.mock import MagicMock
+        answer = [(socket.AF_INET, socket.SOCK_STREAM, 6, '', ('10.21.21.8', 8332))]
+        for url, kind, host in [('bitcoin_bitcoind_1:8332', 'HTTPConnection', '10.21.21.8'),
+                                ('https://node.example:8332', 'HTTPSConnection', 'node.example')]:
+            with self.subTest(url=url), patch('socket.getaddrinfo', return_value=answer), \
+                    patch('http.client.' + kind) as connect:
+                response = MagicMock(status=200)
+                response.read.return_value = b'{"result": 17}'
+                connect.return_value.getresponse.return_value = response
+                self.assertEqual(m.rpc({'url':url, 'auth':'test', 'pass':'fixture'}, 'getnetworkinfo'), 17)
+                connect.assert_called_once_with(host, 8332, timeout=10)
+
+    def test_cleartext_refused_before_connection(self):
+        import socket
+        answer = [(socket.AF_INET, socket.SOCK_STREAM, 6, '', ('192.0.2.1', 8332))]
+        with patch('socket.getaddrinfo', return_value=answer), patch('http.client.HTTPConnection') as connect:
+            with self.assertRaises(ValueError):
+                m.rpc({'url':'http://node.example:8332','auth':'test','pass':'fixture'}, 'getnetworkinfo')
+            connect.assert_not_called()
+
+    def test_public_file_respects_process_umask(self):
+        import os
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / 'pool/location.json'
+            # An inherited default ACL supersedes umask on Linux.
+            if hasattr(os, 'listxattr') and 'system.posix_acl_default' in os.listxattr(directory):
+                os.removexattr(directory, 'system.posix_acl_default')
+            old = os.umask(0o022)
+            try:
+                m.publish(path, None)
+                self.assertEqual(path.stat().st_mode & 0o777, 0o644)
+                os.umask(0o077)
+                m.publish(path, None)
+                self.assertEqual(path.stat().st_mode & 0o777, 0o600)
+            finally:
+                os.umask(old)
+
     def test_only_public_metadata_is_published(self):
         with tempfile.TemporaryDirectory() as directory:
             path=Path(directory)/'pool/location.json'

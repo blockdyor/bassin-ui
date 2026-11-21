@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict'
-import {readFile, mkdir} from 'node:fs/promises'
+import {readFile} from 'node:fs/promises'
+import {createScreenshotDir} from './screenshots.mjs'
 const {chromium} = await import(process.env.PLAYWRIGHT_MODULE || 'playwright')
 const browser = await chromium.launch({headless: true, executablePath: process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE})
 const base = process.env.BASSIN_TEST_URL || 'http://127.0.0.1:4174'
@@ -8,7 +9,7 @@ const users = JSON.parse(
 	await readFile(new URL('../src/demodata/users/1BitcoinEaterAddressDontSendf59kuE', import.meta.url), 'utf8'),
 )
 const start = Date.parse('2026-10-07T23:59:30Z')
-await mkdir('/tmp/bassin-ui-fork-review', {recursive: true})
+const output = await createScreenshotDir()
 try {
 	for (const [colorScheme, timezoneId] of [
 		['light', 'America/Los_Angeles'],
@@ -62,7 +63,7 @@ try {
 			await tooltip.locator('.recharts-tooltip-item').evaluate((el) => getComputedStyle(el).color),
 			'rgb(118, 217, 245)',
 		)
-		await page.screenshot({path: `/tmp/bassin-ui-fork-review/utc-tooltip-${colorScheme}.png`})
+		await page.screenshot({path: `${output}/utc-tooltip-${colorScheme}.png`})
 		// Refreshing metadata must change the version without rebuilding the frontend.
 		version = {software: 'ckpool', version: '10.0.0'}
 		stamp += 60

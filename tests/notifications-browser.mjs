@@ -1,11 +1,11 @@
 import assert from 'node:assert/strict'
-import {readFile, mkdir} from 'node:fs/promises'
+import {readFile} from 'node:fs/promises'
+import {createScreenshotDir} from './screenshots.mjs'
 const {chromium, webkit} = await import(process.env.PLAYWRIGHT_MODULE || 'playwright')
 const engine = process.env.BASSIN_BROWSER || 'chromium'
 const browser = await (engine === 'webkit' ? webkit : chromium).launch({headless: true, ...(engine === 'chromium' ? {executablePath: process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE} : {})})
 const base = process.env.BASSIN_TEST_URL || 'http://127.0.0.1:4174'
-const output = '/tmp/bassin-notifications-review'
-await mkdir(output, {recursive: true})
+const output = await createScreenshotDir()
 try {
   for (const width of [1440, 390, 320]) {
     const context = await browser.newContext({viewport: {width, height: width === 1440 ? 1000 : 844}})

@@ -1,11 +1,11 @@
 import assert from 'node:assert/strict'
-import {mkdir} from 'node:fs/promises'
+import {createScreenshotDir} from './screenshots.mjs'
 const {chromium} = await import(process.env.PLAYWRIGHT_MODULE || 'playwright')
 const browser = await chromium.launch({headless: true, executablePath: process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE})
 const context = await browser.newContext({viewport: {width: 1440, height: 1000}, reducedMotion: 'reduce'})
 const errors = [],
 	external = []
-let location = {source: 'bitcoin-node', ip: '8.8.8.8', latitude: 51.5, longitude: 0, updatedAt: Date.now()}
+let location = {source: 'bitcoin-node', ip: '203.0.113.1', latitude: 51.5, longitude: 0, updatedAt: Date.now()}
 await context.route('**/pool/location.json', (route) => route.fulfill({json: location}))
 context.on('request', (request) => {
 	if (/ipwho|ipify|ipinfo|geoip/i.test(request.url())) external.push(request.url())
@@ -19,8 +19,8 @@ try {
 	await page.waitForTimeout(8000)
 	assert.equal(await globe.getAttribute('data-marker-count'), '1')
 	const hero = page.getByTestId('home-hero')
-	await mkdir('/tmp/bassin-ui-fork-review', {recursive: true})
-	await page.screenshot({path: '/tmp/bassin-ui-fork-review/globe-node-marker.png'})
+	const output = await createScreenshotDir()
+	await page.screenshot({path: `${output}/globe-node-marker.png`})
 	// The visible region lies within the cropped globe's frame, away from overlays.
 	const box = await hero.boundingBox()
 	const crop = {x: box.x + 140, y: box.y + 85, width: 210, height: 170}
@@ -32,7 +32,7 @@ try {
 	await page.waitForTimeout(1500)
 	const after = await page.screenshot({clip: crop})
 	assert.ok(!before.equals(after), 'Dragging must change the geographic map')
-	await page.screenshot({path: '/tmp/bassin-ui-fork-review/globe-dragged.png'})
+	await page.screenshot({path: `${output}/globe-dragged.png`})
 	for (const value of [null, {...location, source: 'visitor'}, {...location, updatedAt: 1}]) {
 		location = value
 		await page.reload()

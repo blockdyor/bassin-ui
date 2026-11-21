@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict'
-import {readFile, mkdir} from 'node:fs/promises'
+import {readFile} from 'node:fs/promises'
+import {createScreenshotDir} from './screenshots.mjs'
 const {chromium, webkit} = await import(process.env.PLAYWRIGHT_MODULE || 'playwright')
 const engine = process.env.BASSIN_BROWSER || 'chromium'
 const browser = await (engine === 'webkit' ? webkit : chromium).launch({
@@ -7,8 +8,7 @@ const browser = await (engine === 'webkit' ? webkit : chromium).launch({
 	...(engine === 'chromium' ? {executablePath: process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE} : {}),
 })
 const base = process.env.BASSIN_TEST_URL || 'http://127.0.0.1:4174'
-const output = '/tmp/bassin-hashrate-review'
-await mkdir(output, {recursive: true})
+const output = await createScreenshotDir()
 const fixture = (await readFile(new URL('../src/demodata/pool/pool.status', import.meta.url), 'utf8')).trim().split('\n').map(JSON.parse)
 const keys = ['hashrate1m', 'hashrate5m', 'hashrate1hr', 'hashrate1d', 'hashrate7d']
 try {
@@ -35,7 +35,7 @@ try {
 		const section = page.getByRole('region', {name: 'Hashrate averages'})
 		await section.scrollIntoViewIfNeeded()
 		await page.getByText('Shared scale · 0–3 TH/s').waitFor()
-		const heights = await page.locator('.hashrate-water').evaluateAll((nodes) => nodes.map((node) => parseFloat(node.style.height)))
+		const heights = await page.locator('.hashrate-water').evaluateAll((nodes) => nodes.map((node) => Number.parseFloat(node.style.height)))
 		for (const [index, rate] of [2, 1, 0.5, 0.25, 0].entries()) {
 			assert.ok(Math.abs(heights[index] - rate / 3 * 100) < 0.001, 'Water levels must share a zero-based scale')
 		}

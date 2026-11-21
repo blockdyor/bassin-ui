@@ -31,7 +31,7 @@ export default function HashrateAverages() {
 	}, [])
 	const values = windows.map(([key]) => {
 		const raw = pool?.[key]
-		const value = raw?.trim() ? parseHashrate(raw) : NaN
+		const value = raw?.trim() ? parseHashrate(raw) : Number.NaN
 		return Number.isFinite(value) && value >= 0 ? value : null
 	})
 	const maximum = Math.max(0, ...values.map((value) => value ?? 0))
