@@ -54,20 +54,16 @@ class PoolLocationTest(unittest.TestCase):
             self.assertIsNone(m.lookup('127.0.0.1'))
             request.assert_not_called()
 
-    def test_cli_rejects_non_deployment_paths(self):
-        with tempfile.TemporaryDirectory() as directory:
-            for default in (m.CONFIG, m.OUTPUT):
-                path = Path(directory) / ('custom' + default.suffix)
-                path.touch()
-                self.assertEqual(m.deployment_file(str(path), path.with_name(default.name)), path)
+    def test_once_with_custom_paths(self):
         import subprocess
         import sys
-        for option in ('--config', '--output'):
-            with self.subTest(option=option), tempfile.TemporaryDirectory() as directory:
-                result = subprocess.run([sys.executable, m.__file__, option, directory, '--once'],
-                                        capture_output=True, text=True)
-                self.assertEqual(result.returncode, 2)
-                self.assertIn('expected an existing', result.stderr)
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / 'operator.conf').write_text('{"btcd": []}')
+            subprocess.run([sys.executable, m.__file__, '--config', 'operator.conf',
+                            '--output', 'new/nested/status.json', '--once'], cwd=root,
+                           check=True, timeout=10)
+            self.assertIsNone(json.loads((root / 'new/nested/status.json').read_text()))
 
     def test_rpc_transport(self):
         import socket

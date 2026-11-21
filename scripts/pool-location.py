@@ -142,7 +142,7 @@ def read_json(path):
 
 
 def publish(path, value):
-    path.parent.mkdir(exist_ok=True)
+    path.parent.mkdir(parents=True, exist_ok=True)
     with parent_directory(path) as directory:
         temporary = '.location-' + secrets.token_hex(16)
         # Public metadata is served by a separate reader; respect deployment umask.
@@ -156,27 +156,15 @@ def publish(path, value):
             raise
 
 
-def deployment_file(value, default):
-    if value == str(default):
-        return default
-    for candidate in default.parent.glob('*' + default.suffix):
-        if str(candidate) == value and not candidate.is_symlink() and candidate.is_file():
-            return candidate
-    raise argparse.ArgumentTypeError(f'expected an existing {default.suffix} file in {default.parent}')
-
-
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('--config', default=str(CONFIG))
-    parser.add_argument('--output', default=str(OUTPUT))
+    parser.add_argument('--config', type=Path, default=CONFIG)
+    parser.add_argument('--output', type=Path, default=OUTPUT)
     parser.add_argument('--interval', type=int, default=900)
     parser.add_argument('--once', action='store_true')
     args = parser.parse_args()
-    try:
-        config_file = deployment_file(args.config, CONFIG)
-        output = deployment_file(args.output, OUTPUT)
-    except argparse.ArgumentTypeError as error:
-        parser.error(str(error))
+    # Only local operator arguments select files; RPC and geolocation data never do.
+    config_file, output = args.config, args.output
     while True:
         try:
             config = read_json(config_file)
