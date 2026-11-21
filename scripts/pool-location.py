@@ -167,24 +167,29 @@ def deployment_file(value, default):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('--config', type=lambda value: deployment_file(value, CONFIG), default=CONFIG)
-    parser.add_argument('--output', type=lambda value: deployment_file(value, OUTPUT), default=OUTPUT)
+    parser.add_argument('--config', default=str(CONFIG))
+    parser.add_argument('--output', default=str(OUTPUT))
     parser.add_argument('--interval', type=int, default=900)
     parser.add_argument('--once', action='store_true')
     args = parser.parse_args()
+    try:
+        config_file = deployment_file(args.config, CONFIG)
+        output = deployment_file(args.output, OUTPUT)
+    except argparse.ArgumentTypeError as error:
+        parser.error(str(error))
     while True:
         try:
-            config = read_json(args.config)
+            config = read_json(config_file)
             if not isinstance(config, dict):
                 raise ValueError('Invalid configuration')
             try:
-                previous = read_json(args.output)
+                previous = read_json(output)
             except (OSError, ValueError):
                 previous = None
             location = resolve(config, previous)
         except (OSError, ValueError):
             location = None
-        publish(args.output, location)
+        publish(output, location)
         if args.once:
             return
         time.sleep(max(60, args.interval))

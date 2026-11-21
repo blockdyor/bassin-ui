@@ -64,10 +64,10 @@ class PoolLocationTest(unittest.TestCase):
         import sys
         for option in ('--config', '--output'):
             with self.subTest(option=option), tempfile.TemporaryDirectory() as directory:
-                result = subprocess.run([sys.executable, m.__file__, option, directory, '--help'],
+                result = subprocess.run([sys.executable, m.__file__, option, directory, '--once'],
                                         capture_output=True, text=True)
                 self.assertEqual(result.returncode, 2)
-                self.assertIn(option, result.stderr)
+                self.assertIn('expected an existing', result.stderr)
 
     def test_rpc_transport(self):
         import socket
