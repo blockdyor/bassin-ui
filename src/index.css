@@ -1,12 +1,13 @@
-@config '../tailwind.config.ts';
 @import 'tailwindcss' source(none);
-@source './';
 @import 'tw-animate-css';
 
 /* Imported fonts */
 @import '@fontsource-variable/outfit';
 @import '@fontsource-variable/dm-sans';
 /* TODO: import dm-mono */
+
+@config '../tailwind.config.ts';
+@source './';
 
 html,
 body {

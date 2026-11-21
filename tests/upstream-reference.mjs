@@ -1,5 +1,7 @@
-import {mkdir} from 'node:fs/promises'
+import {createScreenshotDir} from './screenshots.mjs'
 const {chromium} = await import(process.env.PLAYWRIGHT_MODULE || 'playwright')
+const settingsModule = process.env.BASSIN_REFERENCE_SETTINGS_PATH
+if (!settingsModule?.startsWith('/') || settingsModule.startsWith('//')) throw new Error('Set BASSIN_REFERENCE_SETTINGS_PATH to a same-origin Vite module path')
 const browser = await chromium.launch({headless: true})
 const page = await browser.newPage({viewport: {width: 1440, height: 1000}})
 page.setDefaultTimeout(25000)
@@ -49,22 +51,22 @@ await page.route('**/api/**', (route) => {
 	return route.fulfill({json: data})
 })
 await page.routeWebSocket('**/api/**', (ws) => ws.close())
-await mkdir('/tmp/bassin-ui-reference', {recursive: true})
+const output = await createScreenshotDir()
 try {
 	await page.goto('http://127.0.0.1:4180')
 	await page.getByText('Bitcoin Node', {exact: true}).first().waitFor()
 	await page.waitForTimeout(8000)
-	await page.screenshot({path: '/tmp/bassin-ui-reference/home.png'})
-	settingsDefaults = await page.evaluate(async () => {
-		const m = await import('/@fs/tmp/bassin-umbrel-reference/libs/settings/index.ts')
+	await page.screenshot({path: `${output}/home.png`})
+	settingsDefaults = await page.evaluate(async (path) => {
+		const m = await import(new URL(path, location.origin).pathname)
 		return m.DefaultValuesForVersion(m.resolveVersion('latest'))
-	})
+	}, settingsModule)
 	await page.goto('http://127.0.0.1:4180/settings')
 	await page.waitForTimeout(1500)
-	await page.screenshot({path: '/tmp/bassin-ui-reference/settings.png'})
+	await page.screenshot({path: `${output}/settings.png`})
 	await page.goto('http://127.0.0.1:4180/insights')
 	await page.waitForTimeout(1500)
-	await page.screenshot({path: '/tmp/bassin-ui-reference/insights.png'})
+	await page.screenshot({path: `${output}/insights.png`})
 	console.log('Rendered upstream reference screenshots.')
 } finally {
 	await browser.close()

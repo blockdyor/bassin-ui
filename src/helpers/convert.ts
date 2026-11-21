@@ -26,9 +26,9 @@ export const parseHashrate = (value: string): number => {
 
     const match = value.trim().match(/^([\d.,]+)\s*([KMGTPEZY]?)[H]?\b/i);
 
-    if (!match) return NaN;
+    if (!match) return Number.NaN;
 
-    const numericPart = parseFloat(match[1].replace(',', '.'));
+    const numericPart = Number.parseFloat(match[1].replace(',', '.'));
     const unit = match[2].toUpperCase();
     const multiplier = units[unit] || 1;
 

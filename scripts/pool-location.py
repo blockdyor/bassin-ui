@@ -3,15 +3,33 @@
 import argparse
 import base64
 from collections import Counter
+import http.client
 import ipaddress
 import json
 import math
 import os
+import re
+
 from pathlib import Path
-import tempfile
+import secrets
+import socket
+from contextlib import contextmanager
 import time
 from urllib.parse import quote, urlsplit
-from urllib.request import Request, ProxyHandler, build_opener, urlopen
+from urllib.request import Request, urlopen
+
+CONFIG = Path('/config/ckpool.conf')
+OUTPUT = Path('/www/pool/location.json')
+
+def private_rpc(address):
+    ip = ipaddress.ip_address(address)
+    if ip.is_loopback:
+        return True
+    if ip.version == 6:
+        return ip in ipaddress.IPv6Network('fc00::/7')
+    # RFC 1918 only; is_private also includes documentation and reserved space.
+    first, second = ip.packed[:2]
+    return first == 10 or (first == 172 and 16 <= second <= 31) or (first, second) == (192, 168)
 
 
 def public_ip(address):
@@ -43,17 +61,31 @@ def node_ip(network_info, peers=()):
 
 def rpc(node, method):
     url = node['url']
-    if '://' not in url:
-        url = 'http://' + url
-    parsed = urlsplit(url)
-    if parsed.scheme not in ('http', 'https') or not parsed.hostname or parsed.username or parsed.password:
+    parsed = urlsplit(url if '://' in url else '//' + url)
+    if parsed.scheme not in ('', 'http', 'https') or not parsed.hostname or parsed.username is not None:
         raise ValueError('Invalid node URL')
+    host, port = parsed.hostname, parsed.port
+    if parsed.scheme == 'https':
+        connection = http.client.HTTPSConnection(host, port, timeout=10)
+    else:
+        # Umbrel's Bitcoin RPC has no TLS. Pin a private address, not a DNS name.
+        addresses = socket.getaddrinfo(host, port or 80, type=socket.SOCK_STREAM)
+        host = next((addr[4][0] for addr in addresses if private_rpc(addr[4][0])), None)
+        if host is None:
+            raise ValueError('Non-private node RPC requires HTTPS')
+        connection = http.client.HTTPConnection(host, port, timeout=10)
     token = base64.b64encode((node['auth'] + ':' + node['pass']).encode()).decode()
-    request = Request(url, data=json.dumps({'jsonrpc':'1.0','id':'bassin-location','method':method,'params':[]}).encode(),
-                      headers={'Content-Type':'application/json', 'Authorization':'Basic ' + token})
-    # Internal RPC credentials must not be sent through an environment-configured HTTP proxy.
-    with build_opener(ProxyHandler({})).open(request, timeout=10) as response:
+    body = json.dumps({'jsonrpc':'1.0','id':'bassin-location','method':method,'params':[]})
+    try:
+        target = (parsed.path or '/') + ('?' + parsed.query if parsed.query else '')
+        connection.request('POST', target,
+                           body, {'Host':parsed.netloc, 'Content-Type':'application/json', 'Authorization':'Basic ' + token})
+        response = connection.getresponse()
+        if response.status != 200:
+            raise ValueError('Node RPC failed')
         data = json.loads(response.read(1_000_000))
+    finally:
+        connection.close()
     if data.get('error'):
         raise ValueError('Node RPC failed')
     return data['result']
@@ -95,34 +127,72 @@ def resolve(config, previous=None, rpc_call=rpc, geolocate=lookup):
     return None
 
 
+@contextmanager
+def parent_directory(path, create=False):
+    # Walk from a known descriptor; never follow links in intermediate directories.
+    flags = os.O_DIRECTORY | os.O_NOFOLLOW
+    directory = os.open('/' if path.is_absolute() else '.', flags)
+    try:
+        for part in path.parent.parts:
+            if part == path.anchor:
+                continue
+            name = local_name(part)
+            if create:
+                try:
+                    os.mkdir(name, dir_fd=directory)
+                except FileExistsError:
+                    pass
+            child = os.open(name, flags, dir_fd=directory)
+            os.close(directory)
+            directory = child
+        yield directory
+    finally:
+        os.close(directory)
+
+
+def local_name(part):
+    if part in ('.', '..') or not re.fullmatch(r'[^/\x00-\x1f]+', part):
+        raise ValueError('Expected a local filename component')
+    return part
+
+
+def read_json(path):
+    with parent_directory(path) as directory:
+        with os.fdopen(os.open(local_name(os.path.basename(path)), os.O_RDONLY | os.O_NOFOLLOW, dir_fd=directory)) as file:
+            return json.load(file)
+
+
 def publish(path, value):
-    path.parent.mkdir(parents=True, exist_ok=True)
-    with tempfile.NamedTemporaryFile(mode='w', dir=path.parent, prefix='.location-', delete=False) as file:
-        temporary = Path(file.name)
+    name = local_name(os.path.basename(path))
+    with parent_directory(path, create=True) as directory:
+        temporary = '.location-' + secrets.token_hex(16)
+        # Public metadata is served by a separate reader; respect deployment umask.
+        fd = os.open(temporary, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o644, dir_fd=directory)
         try:
-            json.dump(value, file, allow_nan=False)
-            file.flush()
-            os.fchmod(file.fileno(), 0o644)
-            os.replace(temporary, path)
-        finally:
-            temporary.unlink(missing_ok=True)
+            with os.fdopen(fd, 'w') as file:
+                json.dump(value, file, allow_nan=False)
+            os.replace(temporary, name, src_dir_fd=directory, dst_dir_fd=directory)
+        except BaseException:
+            os.unlink(temporary, dir_fd=directory)
+            raise
 
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('--config', default='/config/ckpool.conf')
-    parser.add_argument('--output', default='/www/pool/location.json')
+    parser.add_argument('--config', type=Path, default=CONFIG)
+    parser.add_argument('--output', type=Path, default=OUTPUT)
     parser.add_argument('--interval', type=int, default=900)
     parser.add_argument('--once', action='store_true')
     args = parser.parse_args()
-    output = Path(args.output)
+    # Only local operator arguments select files; RPC and geolocation data never do.
+    config_file, output = args.config, args.output
     while True:
         try:
-            config = json.loads(Path(args.config).read_text())
+            config = read_json(config_file)
             if not isinstance(config, dict):
                 raise ValueError('Invalid configuration')
             try:
-                previous = json.loads(output.read_text())
+                previous = read_json(output)
             except (OSError, ValueError):
                 previous = None
             location = resolve(config, previous)

@@ -54,6 +54,75 @@ class PoolLocationTest(unittest.TestCase):
             self.assertIsNone(m.lookup('127.0.0.1'))
             request.assert_not_called()
 
+    def test_once_with_custom_paths(self):
+        from http.server import BaseHTTPRequestHandler, HTTPServer
+        import subprocess
+        import sys
+        from threading import Thread
+        calls = []
+
+        class Node(BaseHTTPRequestHandler):
+            def do_POST(self):
+                calls.append(json.loads(self.rfile.read(int(self.headers['Content-Length'])))['method'])
+                self.send_response(200)
+                self.end_headers()
+                self.wfile.write(b'{"result": {}}' if calls[-1] == 'getnetworkinfo' else b'{"result": []}')
+
+        with tempfile.TemporaryDirectory() as directory, HTTPServer(('127.0.0.1', 0), Node) as node:
+            root = Path(directory)
+            rpc = {'url': f'127.0.0.1:{node.server_port}', 'auth': 'test', 'pass': 'fixture'}
+            (root / 'operator.conf').write_text(json.dumps({'btcd': [rpc]}))
+            server = Thread(target=node.serve_forever)
+            server.start()
+            try:
+                subprocess.run([sys.executable, m.__file__, '--config', str(root / 'operator.conf'),
+                                '--output', 'new/nested/status.json', '--once'], cwd=root,
+                               check=True, timeout=10)
+            finally:
+                node.shutdown()
+                server.join()
+            self.assertEqual(calls, ['getnetworkinfo', 'getpeerinfo'])
+            self.assertIsNone(json.loads((root / 'new/nested/status.json').read_text()))
+
+    def test_rpc_transport(self):
+        import socket
+        from unittest.mock import MagicMock
+        answer = [(socket.AF_INET, socket.SOCK_STREAM, 6, '', ('10.21.21.8', 8332))]
+        for url, kind, host in [('bitcoin_bitcoind_1:8332', 'HTTPConnection', '10.21.21.8'),
+                                ('https://node.example:8332', 'HTTPSConnection', 'node.example')]:
+            with self.subTest(url=url), patch('socket.getaddrinfo', return_value=answer), \
+                    patch('http.client.' + kind) as connect:
+                response = MagicMock(status=200)
+                response.read.return_value = b'{"result": 17}'
+                connect.return_value.getresponse.return_value = response
+                self.assertEqual(m.rpc({'url':url, 'auth':'test', 'pass':'fixture'}, 'getnetworkinfo'), 17)
+                connect.assert_called_once_with(host, 8332, timeout=10)
+
+    def test_cleartext_refused_before_connection(self):
+        import socket
+        answer = [(socket.AF_INET, socket.SOCK_STREAM, 6, '', ('192.0.2.1', 8332))]
+        with patch('socket.getaddrinfo', return_value=answer), patch('http.client.HTTPConnection') as connect:
+            with self.assertRaises(ValueError):
+                m.rpc({'url':'http://node.example:8332','auth':'test','pass':'fixture'}, 'getnetworkinfo')
+            connect.assert_not_called()
+
+    def test_public_file_respects_process_umask(self):
+        import os
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / 'pool/location.json'
+            # An inherited default ACL supersedes umask on Linux.
+            if hasattr(os, 'listxattr') and 'system.posix_acl_default' in os.listxattr(directory):
+                os.removexattr(directory, 'system.posix_acl_default')
+            old = os.umask(0o022)
+            try:
+                m.publish(path, None)
+                self.assertEqual(path.stat().st_mode & 0o777, 0o644)
+                os.umask(0o077)
+                m.publish(path, None)
+                self.assertEqual(path.stat().st_mode & 0o777, 0o600)
+            finally:
+                os.umask(old)
+
     def test_only_public_metadata_is_published(self):
         with tempfile.TemporaryDirectory() as directory:
             path=Path(directory)/'pool/location.json'
