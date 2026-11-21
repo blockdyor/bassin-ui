@@ -8,7 +8,7 @@ import ipaddress
 import json
 import math
 import os
-import re
+
 from pathlib import Path
 import secrets
 import socket
@@ -19,9 +19,16 @@ from urllib.request import Request, urlopen
 
 CONFIG = Path('/config/ckpool.conf')
 OUTPUT = Path('/www/pool/location.json')
-PRIVATE_RPC = tuple(map(ipaddress.ip_network, (
-    '127.0.0.0/8', '10.0.0.0/8', '172.16.0.0/12', '192.168.0.0/16', '::1/128', 'fc00::/7',
-)))
+
+def private_rpc(address):
+    ip = ipaddress.ip_address(address)
+    if ip.is_loopback:
+        return True
+    if ip.version == 6:
+        return ip in ipaddress.IPv6Network('fc00::/7')
+    # RFC 1918 only; is_private also includes documentation and reserved space.
+    first, second = ip.packed[:2]
+    return first == 10 or (first == 172 and 16 <= second <= 31) or (first, second) == (192, 168)
 
 
 def public_ip(address):
@@ -62,8 +69,7 @@ def rpc(node, method):
     else:
         # Umbrel's Bitcoin RPC has no TLS. Pin a private address, not a DNS name.
         addresses = socket.getaddrinfo(host, port or 80, type=socket.SOCK_STREAM)
-        host = next((addr[4][0] for addr in addresses if any(
-            ipaddress.ip_address(addr[4][0]) in network for network in PRIVATE_RPC)), None)
+        host = next((addr[4][0] for addr in addresses if private_rpc(addr[4][0])), None)
         if host is None:
             raise ValueError('Non-private node RPC requires HTTPS')
         connection = http.client.HTTPConnection(host, port, timeout=10)
@@ -151,10 +157,12 @@ def publish(path, value):
 
 
 def deployment_file(value, default):
-    path = Path(value)
-    if path.parent != default.parent or not re.fullmatch(r'[A-Za-z0-9_-][A-Za-z0-9_.-]*', path.stem) or path.suffix != default.suffix:
-        raise argparse.ArgumentTypeError(f'expected a {default.suffix} file in {default.parent}')
-    return default.parent / path.name
+    if value == str(default):
+        return default
+    for candidate in default.parent.glob('*' + default.suffix):
+        if str(candidate) == value and not candidate.is_symlink() and candidate.is_file():
+            return candidate
+    raise argparse.ArgumentTypeError(f'expected an existing {default.suffix} file in {default.parent}')
 
 
 def main():
