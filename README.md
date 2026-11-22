@@ -6,7 +6,7 @@ This blockdyor fork of [duckaxe/bassin-ui](https://github.com/duckaxe/bassin-ui)
 
 ## Install Bassin on Umbrel
 
-As of November 21, 2026, the Blockdyor community store ships Bassin 2.1.12. The official Umbrel store ships 2.1.4; [PR #6404](https://github.com/getumbrel/umbrel-apps/pull/6404) proposes 2.1.12 for that store.
+As of November 22, 2026, the Blockdyor community store ships Bassin 2.1.14 (with Stratum V2 and CKPool `v1.2.0-2`, compatible with Bitcoin Core and Bitcoin Knots 29.3+). The official Umbrel store ships 2.1.4; [PR #6404](https://github.com/getumbrel/umbrel-apps/pull/6404) proposes 2.1.14 for that store.
 
 [See the dashboard in the Bassin README](https://github.com/blockdyor/bassin/blob/main/README.md) or follow the [installation guide](https://github.com/blockdyor/bassin/blob/main/docs/getting-started.md) to connect your miner. The npm commands below run the dashboard for development.
 
@@ -33,11 +33,12 @@ Development mode serves sample pool/user files with current timestamps and sampl
 ## Screens
 
 - **Home:** upstream globe panel and ring chart adapted to pool hashrate and accepted/rejected share difficulty. Five animated water columns compare CKPool’s 1-minute, 5-minute, 1-hour, 24-hour and 7-day averages on a shared, zero-based scale. The scale adjusts to the largest average, not an assumed pool capacity. Values stay visible above the water, with the 5-minute average highlighted. Gentle waves and mouse tilt use SVG/CSS; all five columns fit on mobile. Animation pauses off-screen, in hidden tabs, or when pool data is stale/unavailable, and respects reduced-motion preferences. The original geographic globe supports dragging and shows one pulsing blue marker for the public address reported by your Bitcoin node. Without usable node location data it shows no marker. Reduced-motion preferences disable rotation and pulsing; a static image is used without WebGL.
-- **Insights:** worker count, round best share, best share ever, share rate, uptime, sampled hashrate history, share totals, and a searchable/sortable worker table.
-- **Bitcoin node notifications:** clear Bitcoin Core RPC labels, a validated ZMQ hashblock endpoint, and an independent “Poll for new blocks” control. Polling maps to the inverse of `btcd[0].notify`; enabling it preserves the endpoint and all additional nodes. Omitting `zmqblock` uses CKPool’s localhost default rather than disabling ZMQ. The editor does not test notification delivery or change the running configuration.
-- **Settings:** upstream settings layout with Mining, Bitcoin Node, Advanced, and Logs tabs. Import/edit/export `ckpool.conf`, preserving unknown fields and additional nodes. Validation checks known fields; CKPool remains authoritative for custom options.
-- **Logs:** refresh every five seconds, pause/resume, follow output, filter/search, and download visible lines. Reads at most 64 KiB and displays the latest 400 lines. Large files require suffix HTTP Range support. Logs are plain text.
-- **Connect:** upstream tabbed dialog and QR code adapted to Stratum and Bitcoin-address/worker credentials.
+- **Insights:** worker count, round best share, best share ever, share rate, uptime, sampled hashrate history, share totals, live **Stratum V2 & Job Declaration** telemetry, and a searchable/sortable worker table.
+- **Stratum V2:** dedicated **Settings → Stratum V2** tab (`sv2url`, `sv2jdurl`, persistent `/sv2` Noise key paths) and **Connect → Stratum V2** tab with QR code and auto-detected public Base58Check authority key from `/pool/sv2.json`.
+- **Bitcoin node notifications:** clear Bitcoin Core / Bitcoin Knots RPC labels, a validated ZMQ hashblock endpoint, an independent “Poll for new blocks” control, a grouped polling interval, and an optional Mining IPC socket (`ipcmining`, opt-in for Bitcoin Core v32.x; leave blank for Bitcoin Knots 29.3+ and standard RPC/ZMQ).
+- **Settings:** upstream settings layout with Mining, Stratum V2, Bitcoin Node, Advanced, and Logs tabs. Import/edit/export `ckpool.conf` with validation for difficulty, `btcsig`, `donation`, `version_mask`, `dropidle`, SV2 listeners/keys, `serverurl`, extranonce lengths, connection limits, and `reconnect`, preserving unknown fields and additional nodes.
+- **Logs:** refresh every five seconds, pause/resume, follow output, filter/search, and download visible lines. Reads at most 64 KiB (handling empty 0-byte HTTP 416 responses cleanly) and displays the latest 400 lines. Large files require suffix HTTP Range support. Logs are plain text.
+- **Connect:** upstream tabbed dialog and QR codes adapted to Stratum V1 (`3456`), Noise-encrypted Stratum V2 (`3457`, optional JD `3458`), and Bitcoin-address/worker credentials.
 
 ## Current static deployment
 
@@ -50,9 +51,10 @@ The image packages `web/` under `/ui/`. In the blockdyor community store, the UI
 | `/users/<address>` | CKPool user/worker JSON |
 | `/pool/version.json` | Detected CKPool software version, published at pool startup |
 | `/pool/location.json` | Optional public Bitcoin node location metadata |
+| `/pool/sv2.json` | Public Stratum V2 listener & authority pubkey metadata (never private keys) |
 | `/ckpool.log` | CKPool text log, with byte-range support for large files |
 
-CKPool's standard `logdir: /www` produces these files. The UI uses fragment navigation, so the file server does not need an SPA fallback. The default public Stratum port remains `3456`, mapped to CKPool's internal `3333`. Custom deployments should use their actual reachable Stratum host/port in miners.
+CKPool's standard `logdir: /www` produces these files. The UI uses fragment navigation, so the file server does not need an SPA fallback. Default public Stratum ports are `3456` (SV1 → `3333`), `3457` (SV2 Mining → `3336`), and `3458` (SV2 Job Declaration → `3337`). Custom deployments should use their actual reachable Stratum host/port in miners.
 
 ### Applying settings
 
