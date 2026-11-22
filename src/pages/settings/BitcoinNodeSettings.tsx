@@ -128,13 +128,15 @@ export default function BitcoinNodeSettings({config, disabled, live = false, pas
 						<span className='text-[12px] text-white/50 bg-[#26343d] px-1 rounded-sm'>ipcmining</span>
 					</div>
 					<p className='text-[13px] text-white/60 mt-2 mb-3'>
-						Optional Unix socket path for Bitcoin Core v32.x <code className='font-mono'>-ipcbind</code>. Leave blank
-						to use standard JSON-RPC and ZMQ (compatible with both Bitcoin Core and Bitcoin Knots).
+						Optional Unix socket path for Bitcoin Core v32+ <code className='font-mono'>-ipcbind=unix</code> (mounted
+						read-only at <code className='font-mono'>/bitcoin/node.sock</code> on Umbrel mainnet). When the socket is
+						absent, CKPool automatically falls back to standard JSON-RPC and ZMQ (compatible with both Bitcoin Core and
+						Bitcoin Knots).
 					</p>
 					<InputField
 						id='ipcmining'
 						disabled={disabled}
-						placeholder='/run/bitcoind/mining.sock'
+						placeholder='/bitcoin/node.sock'
 						value={typeof config.ipcmining === 'string' ? config.ipcmining : ''}
 						onChange={(e) => onChange('ipcmining', e.target.value.trim() || undefined)}
 					/>

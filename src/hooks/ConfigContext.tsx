@@ -4,18 +4,41 @@ import {defaultConfig, parseConfig, validateConfig} from '@/helpers/config'
 
 export type SaveState = 'idle' | 'saving' | 'saved' | 'error'
 
+const TOKEN_STORAGE_KEY = 'bassin_config_token'
+
+function readSessionToken(): string {
+	try {
+		return window.sessionStorage.getItem(TOKEN_STORAGE_KEY) || ''
+	} catch {
+		return ''
+	}
+}
+
+function writeSessionToken(token: string) {
+	try {
+		if (token) window.sessionStorage.setItem(TOKEN_STORAGE_KEY, token)
+		else window.sessionStorage.removeItem(TOKEN_STORAGE_KEY)
+	} catch {
+		// Ignore storage restrictions.
+	}
+}
+
 function useConfigState() {
 	const queryClient = useQueryClient()
 	const [raw, setRaw] = useState(JSON.stringify(defaultConfig, null, 2))
 	const [baseline, setBaseline] = useState(raw)
 	const [source, setSource] = useState('Bassin template')
 	const [live, setLive] = useState(false)
+	const [authRequired, setAuthRequired] = useState(false)
+	const [unlocked, setUnlocked] = useState(false)
+	const [authError, setAuthError] = useState('')
+	const [token, setToken] = useState<string>(() => readSessionToken())
 	const [passwordsSet, setPasswordsSet] = useState<boolean[]>([])
 	const [saveState, setSaveState] = useState<SaveState>('idle')
 	const [saveError, setSaveError] = useState('')
+	const [pendingRestart, setPendingRestart] = useState(false)
 	const [lastSavedAt, setLastSavedAt] = useState<number | null>(null)
 	const latestRawRef = useRef(raw)
-	const saveSeqRef = useRef(0)
 	const sv2TimersRef = useRef<ReturnType<typeof setTimeout>[]>([])
 	latestRawRef.current = raw
 	const dirty = raw !== baseline
@@ -39,107 +62,165 @@ function useConfigState() {
 		}
 	}, [])
 
-	// Load live running configuration when served by bassin-server.py.
-	useEffect(() => {
-		let cancelled = false
-		async function loadLive() {
-			try {
-				const res = await fetch('/api/config', {cache: 'no-store'})
-				if (!res.ok) return
-				const data = (await res.json()) as {
-					live?: boolean
-					config?: Record<string, unknown>
-					passwordsSet?: unknown
+	const loadLiveConfig = useCallback(async (candidateToken: string): Promise<boolean> => {
+		const headers: Record<string, string> = {}
+		if (candidateToken) headers.Authorization = `Bearer ${candidateToken}`
+		try {
+			const res = await fetch('/api/config', {cache: 'no-store', headers})
+			if (res.status === 401) {
+				const data = (await res.json().catch(() => ({}))) as {live?: boolean; authRequired?: boolean}
+				if (data.live === true || data.authRequired === true) {
+					setLive(true)
+					setAuthRequired(true)
+					setUnlocked(false)
+					setToken('')
+					writeSessionToken('')
+					if (candidateToken) setAuthError('Invalid Bassin config password.')
 				}
-				if (cancelled || data?.live !== true || !data.config || typeof data.config !== 'object') return
-				const serialized = JSON.stringify(data.config, null, 2)
-				setLive(true)
-				setPasswordsSet(Array.isArray(data.passwordsSet) ? data.passwordsSet.map(Boolean) : [])
-				setRaw(serialized)
-				setBaseline(serialized)
-				setSource('Running pool (/config/ckpool.conf)')
-				setSaveState('idle')
-				setSaveError('')
-			} catch {
-				// Static preview or dev mode without live API: stay in local editor fallback mode.
+				return false
 			}
-		}
-		void loadLive()
-		return () => {
-			cancelled = true
+			if (res.status === 403) {
+				const data = (await res.json().catch(() => ({}))) as {live?: boolean; error?: string}
+				if (data.live === true) {
+					setLive(true)
+					setAuthRequired(false)
+					setUnlocked(false)
+					setAuthError(data.error || 'Config API is disabled on the server.')
+				}
+				return false
+			}
+			if (!res.ok) return false
+			const data = (await res.json()) as {
+				live?: boolean
+				config?: Record<string, unknown>
+				passwordsSet?: unknown
+			}
+			if (data?.live !== true || !data.config || typeof data.config !== 'object') return false
+			const serialized = JSON.stringify(data.config, null, 2)
+			setLive(true)
+			setAuthRequired(Boolean(candidateToken))
+			setUnlocked(true)
+			setAuthError('')
+			if (candidateToken) {
+				setToken(candidateToken)
+				writeSessionToken(candidateToken)
+			}
+			setPasswordsSet(Array.isArray(data.passwordsSet) ? data.passwordsSet.map(Boolean) : [])
+			setRaw(serialized)
+			setBaseline(serialized)
+			setSource('Running pool (/config/ckpool.conf)')
+			setSaveState('idle')
+			setSaveError('')
+			return true
+		} catch {
+			return false
 		}
 	}, [])
 
-	const persistConfig = useCallback(
-		async (snapshot: string) => {
-			const seq = ++saveSeqRef.current
+	// Probe live API on mount (uses cached session token if already unlocked in this tab).
+	useEffect(() => {
+		void loadLiveConfig(readSessionToken())
+	}, [loadLiveConfig])
+
+	const unlock = useCallback(
+		async (candidateToken: string) => {
+			const trimmed = candidateToken.trim()
+			if (!trimmed) {
+				setAuthError('Enter your Bassin app password.')
+				return false
+			}
+			setAuthError('')
+			return loadLiveConfig(trimmed)
+		},
+		[loadLiveConfig],
+	)
+
+	const lock = useCallback(() => {
+		writeSessionToken('')
+		setToken('')
+		setUnlocked(false)
+		setAuthRequired(true)
+		setAuthError('')
+		setSaveState('idle')
+		setSaveError('')
+		const empty = JSON.stringify(defaultConfig, null, 2)
+		setRaw(empty)
+		setBaseline(empty)
+		setPasswordsSet([])
+	}, [])
+
+	const discard = useCallback(() => {
+		setRaw(baseline)
+		setSaveState('idle')
+		setSaveError('')
+	}, [baseline])
+
+	const save = useCallback(
+		async ({restart}: {restart: boolean}): Promise<boolean> => {
+			if (!live || !unlocked) return false
+			const snapshot = latestRawRef.current
+			let parsed: Record<string, unknown>
+			try {
+				parsed = parseConfig(snapshot)
+			} catch {
+				return false
+			}
+			if (validateConfig(parsed, {passwordsSet}).length > 0) return false
+
 			setSaveState('saving')
 			setSaveError('')
 			try {
-				const res = await fetch('/api/config', {
+				const headers: Record<string, string> = {
+					'Content-Type': 'application/json',
+					'X-Bassin-Config': '1',
+				}
+				if (token) headers.Authorization = `Bearer ${token}`
+				if (restart) headers['X-Bassin-Restart'] = '1'
+				const res = await fetch(restart ? '/api/config?restart=1' : '/api/config', {
 					method: 'PUT',
 					cache: 'no-store',
-					headers: {
-						'Content-Type': 'application/json',
-						'X-Bassin-Config': '1',
-					},
+					headers,
 					body: snapshot,
 				})
 				const data = (await res.json().catch(() => ({}))) as {
 					error?: string
 					passwordsSet?: unknown
 					savedAt?: number
+					restarted?: boolean
 				}
-				if (seq !== saveSeqRef.current) return
+				if (res.status === 401) {
+					setUnlocked(false)
+					setAuthRequired(true)
+					setToken('')
+					writeSessionToken('')
+					setSaveState('error')
+					setAuthError('Session expired. Unlock Settings to save.')
+					return false
+				}
 				if (!res.ok) {
 					setSaveState('error')
 					setSaveError(data.error || `Save failed (HTTP ${res.status}).`)
-					return
+					return false
 				}
 				if (Array.isArray(data.passwordsSet)) {
 					setPasswordsSet(data.passwordsSet.map(Boolean))
 				}
 				if (latestRawRef.current === snapshot) {
 					setBaseline(snapshot)
-					setSaveState('saved')
-					setLastSavedAt(typeof data.savedAt === 'number' ? data.savedAt : Date.now())
 				}
-				scheduleSv2Refetch()
+				setSaveState('saved')
+				setLastSavedAt(typeof data.savedAt === 'number' ? data.savedAt : Date.now())
+				setPendingRestart(!restart)
+				if (restart) scheduleSv2Refetch()
+				return true
 			} catch {
-				if (seq !== saveSeqRef.current) return
 				setSaveState('error')
 				setSaveError('Could not reach the pool server to save configuration.')
+				return false
 			}
 		},
-		[scheduleSv2Refetch],
+		[live, unlocked, passwordsSet, token, scheduleSv2Refetch],
 	)
-
-	// Debounced auto-save whenever a valid edit is made in live mode.
-	useEffect(() => {
-		if (!live || !dirty) return
-		let parsed: Record<string, unknown>
-		try {
-			parsed = parseConfig(raw)
-		} catch {
-			return
-		}
-		if (validateConfig(parsed, {passwordsSet}).length > 0) return
-		const timer = setTimeout(() => {
-			void persistConfig(raw)
-		}, 450)
-		return () => clearTimeout(timer)
-	}, [live, dirty, raw, passwordsSet, persistConfig])
-
-	const saveNow = useCallback(() => {
-		if (!live) return
-		try {
-			const parsed = parseConfig(latestRawRef.current)
-			if (validateConfig(parsed, {passwordsSet}).length > 0) return
-		} catch {
-			return
-		}
-		void persistConfig(latestRawRef.current)
-	}, [live, passwordsSet, persistConfig])
 
 	useEffect(() => {
 		const warn = (event: BeforeUnloadEvent) => {
@@ -158,11 +239,18 @@ function useConfigState() {
 		setSource,
 		dirty,
 		live,
+		authRequired,
+		unlocked,
+		authError,
+		unlock,
+		lock,
+		discard,
+		save,
 		passwordsSet,
 		saveState,
 		saveError,
+		pendingRestart,
 		lastSavedAt,
-		saveNow,
 	}
 }
 const Context = createContext<ReturnType<typeof useConfigState> | null>(null)

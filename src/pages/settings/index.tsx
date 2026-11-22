@@ -1,8 +1,8 @@
 // Adapts upstream SettingsCard/FieldRenderer: same header/search, underlined tabs,
 // internal FadeScrollArea, field hierarchy, inset inputs, and bottom actions.
-import {useRef, useState} from 'react'
+import {useRef, useState, type FormEvent} from 'react'
 import {useSearchParams} from 'react-router-dom'
-import {CheckCircle2, Download, Search, Info, Github, ExternalLink, Loader2, AlertCircle} from 'lucide-react'
+import {CheckCircle2, Download, Search, Info, Github, ExternalLink, Loader2, AlertCircle, Lock, RotateCw, Save} from 'lucide-react'
 import {toast} from 'sonner'
 import {Card, CardHeader, CardTitle, CardContent, CardFooter} from '@/components/ui/card'
 import {Tabs, TabsList, TabsTrigger} from '@/components/ui/tabs'
@@ -12,6 +12,7 @@ import {GradientBorderFromTop} from '@/components/shared/GradientBorders'
 import FadeScrollArea from '@/components/shared/FadeScrollArea'
 import InfoDialog from '@/components/shared/InfoDialog'
 import {useConfig} from '@/hooks/ConfigContext'
+import {usePoolData} from '@/hooks/PoolContext'
 import {normalizeUrlList, parseConfig, validateConfig, type Config} from '@/helpers/config'
 import {download} from '@/helpers/display'
 import InputField from './InputField'
@@ -77,17 +78,6 @@ const fields: FieldSpec[] = [
 		tab: 'mining',
 		default: '',
 		description: 'Your message in the coinbase of blocks you find. Maximum 38 UTF-8 bytes.',
-	},
-	{
-		key: 'donation',
-		label: 'CKPool Developer Donation',
-		tab: 'mining',
-		default: 0,
-		min: 0,
-		max: 99.9,
-		step: 0.1,
-		unit: '%',
-		description: 'Optional percentage of a found block reward donated to the upstream CKPool developer (0 or 0.1–99.9%).',
 	},
 	{
 		key: 'version_mask',
@@ -176,12 +166,35 @@ const fields: FieldSpec[] = [
 	},
 ]
 export default function SettingsPage() {
-	const {raw, setRaw, baseline, setBaseline, source, setSource, dirty, live, passwordsSet, saveState, saveError, saveNow} =
-		useConfig()
+	const {
+		raw,
+		setRaw,
+		baseline,
+		setBaseline,
+		source,
+		setSource,
+		dirty,
+		live,
+		authRequired,
+		unlocked,
+		authError,
+		unlock,
+		lock,
+		discard,
+		save,
+		passwordsSet,
+		saveState,
+		saveError,
+		pendingRestart,
+	} = useConfig()
+	const {pool} = usePoolData()
 	const [params, setParams] = useSearchParams()
 	const tab = tabs.some((t) => t.value === params.get('tab')) ? params.get('tab')! : 'mining'
 	const [query, setQuery] = useState('')
+	const [tokenInput, setTokenInput] = useState('')
+	const [unlocking, setUnlocking] = useState(false)
 	const file = useRef<HTMLInputElement>(null)
+	const locked = live && !unlocked
 	let config: Config = {},
 		baselineConfig: Config = {},
 		parseError = ''
@@ -249,7 +262,7 @@ export default function SettingsPage() {
 					<InputField
 						id={`field-${field.key}`}
 						className='max-w-[45%] sm:max-w-[240px]'
-						disabled={!!parseError}
+						disabled={!!parseError || (live && field.key === 'logdir')}
 						type={numeric ? 'number' : 'text'}
 						min={numeric ? field.min : undefined}
 						max={numeric ? field.max : undefined}
@@ -293,9 +306,36 @@ export default function SettingsPage() {
 				setBaseline(text)
 				setSource(selected.name)
 			}
-			toast.success(live ? 'Configuration imported — auto-saving if valid' : 'Configuration imported')
+			toast.success(live ? 'Configuration imported — review and click Save to apply' : 'Configuration imported')
 		} catch (e) {
 			toast.error(`Could not import: ${e instanceof Error ? e.message : 'Invalid JSON'}`)
+		}
+	}
+	async function handleUnlock(event: FormEvent) {
+		event.preventDefault()
+		setUnlocking(true)
+		const ok = await unlock(tokenInput)
+		setUnlocking(false)
+		if (ok) {
+			setTokenInput('')
+			toast.success('Settings unlocked for this tab session')
+		}
+	}
+	async function handleSave(restart: boolean) {
+		if (restart && pool && pool.Workers > 0) {
+			const count = pool.Workers
+			const ok = window.confirm(
+				`Saving & restarting CKPool will briefly disconnect ${count} active worker${count === 1 ? '' : 's'}. Continue?`,
+			)
+			if (!ok) return
+		}
+		const ok = await save({restart})
+		if (ok) {
+			toast.success(
+				restart
+					? 'Configuration saved and CKPool restart triggered'
+					: 'Configuration saved. Changes will apply on next pool restart.',
+			)
 		}
 	}
 	function exportFile() {
@@ -323,7 +363,7 @@ export default function SettingsPage() {
 							title='Pool configuration'
 							description={
 								live
-									? 'Connected directly to your running ckpool.conf. Valid changes save automatically and reload CKPool within seconds. Stored Bitcoin RPC passwords stay on the server and are never sent back to the browser.'
+									? 'Connected to your running ckpool.conf using your Bassin app password. Edits are never auto-saved — click Save to write without interrupting miners, or Save & Restart Pool to apply immediately. Restricted keys (such as donation, btcaddress, and logdir) cannot be changed through the API.'
 									: 'Import your existing ckpool.conf, edit its options, and download the updated file. This static preview does not read or write a running configuration. Apply the downloaded file in your config volume and restart Bassin.'
 							}
 						/>
@@ -366,144 +406,201 @@ export default function SettingsPage() {
 						className='h-[calc(100dvh-455px)] md:h-[calc(100dvh-390px)] min-h-[120px] [--fade-top:#101b22] [--fade-bottom:#080e12]'
 					>
 						<div className='pt-6 px-0.5 pb-6'>
-							{search && !shown.length && !showSv2 && !showNode && !showAdvancedExtra && (
-								<p className='text-center text-white/60 text-sm'>No results found for “{query}”</p>
-							)}
-							{shown.map(fieldRow)}
-							{showSv2 && (
-								<StratumV2Settings config={config} disabled={!!parseError} onChange={change} onPatch={patch} />
-							)}
-							{showNode && (
-								<BitcoinNodeSettings
-									config={config}
-									disabled={!!parseError}
-									live={live}
-									passwordsSet={passwordsSet}
-									onChange={change}
-								/>
-							)}
-							{showAdvancedExtra && (
-								<div className='space-y-6 border-t border-white/20 pt-6 mb-6'>
-									<div className='flex flex-col gap-1 border-b border-white/20 pb-6'>
-										<div className='flex flex-row justify-between items-center gap-4'>
-											<div>
-												<label htmlFor='field-serverurl' className='text-[14px] font-normal text-white'>
-													Stratum V1 Listeners
-												</label>
-												<div className='my-1'>
-													<span className='text-[12px] text-white/50 bg-[#26343d] px-1 rounded-sm'>serverurl</span>
-												</div>
-											</div>
-											<InputField
-												id='field-serverurl'
-												className='max-w-[45%] sm:max-w-[240px]'
-												disabled={!!parseError}
-												placeholder='0.0.0.0:3333'
-												value={normalizeUrlList(config.serverurl).join(', ')}
-												onChange={(e) => {
-													const list = e.target.value
-														.split(/[,\n]/)
-														.map((part) => part.trim())
-														.filter(Boolean)
-													change('serverurl', list.length ? list : undefined)
-												}}
-											/>
-										</div>
-										<p className='text-[13px] text-white/60'>
-											Comma-separated host:port bindings for Stratum V1. Leaving blank binds all interfaces on port
-											3333.
-										</p>
+							{locked && tab !== 'logs' ? (
+								<div
+									data-testid='config-auth-gate'
+									className='mx-auto max-w-md rounded-2xl border border-white/15 bg-black/25 p-6 space-y-4'
+								>
+									<div className='flex items-center gap-2 text-white'>
+										<Lock className='size-4 text-[#76d9f5]' />
+										<h3 className='font-outfit text-lg'>Unlock pool settings</h3>
 									</div>
-									<div className='flex justify-between items-center gap-4'>
-										<div>
-											<p className='text-[14px] text-white'>Allow Client Reconnect</p>
-											<span className='text-[12px] text-white/50 bg-[#26343d] px-1 rounded-sm'>reconnect</span>
-											<p className='text-[13px] text-white/60 mt-1'>
-												Allow Stratum V1 client.reconnect directives (enabled by default in CKPool).
+									{authRequired ? (
+										<>
+											<p className='text-[13px] text-white/65'>
+												Enter your Bassin app password (shown in Umbrel under Bassin’s app credentials, or your{' '}
+												<code className='font-mono'>BASSIN_CONFIG_TOKEN</code>) to view and edit live settings. The
+												Logs tab remains available without unlocking.
 											</p>
-										</div>
-										<Toggle
-											name='Allow Client Reconnect'
-											checked={config.reconnect !== false}
-											disabled={!!parseError}
-											onToggle={(value) => change('reconnect', value ? undefined : false)}
-										/>
-									</div>
-								</div>
-							)}
-							{!search && (
-								<>
-									{tab === 'advanced' && (
-										<div>
-											<h3 className='font-outfit text-lg mb-2'>Custom Configuration</h3>
-											<p className='text-[13px] text-white/60 mb-4'>
-												Complete pool configuration JSON, including imported credentials and custom options. Changing
-												Stratum listeners also requires matching the container’s published ports.
-											</p>
-											<textarea
-												aria-label='Pool configuration JSON'
-												className='w-full min-h-64 rounded-lg bg-black/30 border border-white/10 p-3 font-mono text-xs text-white/75 leading-6 focus:outline-[#76d9f5]'
-												value={raw}
-												onChange={(e) => setRaw(e.target.value)}
-												spellCheck={false}
-											/>
-										</div>
-									)}
-									{tab === 'logs' && <CKPoolLog />}
-								</>
-							)}
-							{(tab !== 'logs' || search) && (
-								<>
-									{live ? (
-										<div
-											data-testid='live-config-status'
-											role='status'
-											className='mt-5 flex flex-wrap items-center justify-between gap-2 rounded-lg bg-white/5 px-3 py-2 text-xs text-white/75'
-										>
-											<span className='flex items-center gap-2'>
-												{saveState === 'saving' || (dirty && errors.length === 0 && saveState !== 'error') ? (
-													<>
-														<Loader2 className='size-3.5 animate-spin text-[#76d9f5]' />
-														Saving changes and reloading CKPool…
-													</>
-												) : saveState === 'error' ? (
-													<>
-														<AlertCircle className='size-3.5 text-amber-300' />
-														<span className='text-amber-200'>{saveError || 'Failed to save changes.'}</span>
-													</>
-												) : saveState === 'saved' ? (
-													<>
-														<CheckCircle2 className='size-3.5 text-emerald-300' />
-														Saved · CKPool reloads automatically
-													</>
-												) : (
-													<>
-														<CheckCircle2 className='size-3.5 text-[#76d9f5]' />
-														Live · Changes auto-save and reload CKPool
-													</>
+											<form onSubmit={(e) => void handleUnlock(e)} className='space-y-3'>
+												<Input
+													type='password'
+													autoComplete='current-password'
+													aria-label='Bassin config password'
+													placeholder='App password'
+													value={tokenInput}
+													onChange={(e) => setTokenInput(e.target.value)}
+													className='border-none bassin-field text-white placeholder:text-white/50 focus-visible:ring-0'
+												/>
+												{authError && (
+													<p role='alert' className='text-xs text-amber-200'>
+														{authError}
+													</p>
 												)}
-											</span>
-											{saveState === 'error' && errors.length === 0 && (
-												<Button type='button' size='sm' variant='secondary' onClick={saveNow}>
-													Retry save
+												<Button type='submit' disabled={unlocking} className='w-full sm:w-auto'>
+													{unlocking ? <Loader2 className='size-4 animate-spin' /> : <Lock className='size-4' />}
+													Unlock Settings
 												</Button>
-											)}
-										</div>
+											</form>
+										</>
 									) : (
-										<p className='text-[11px] text-white/40 mt-5 break-all'>
-											Editing {source}
-											{dirty ? ' · Unexported changes' : ''}. Local configuration, not the running pool.
+										<p role='alert' className='text-[13px] text-amber-200'>
+											{authError || 'Config API is disabled on this server (BASSIN_CONFIG_TOKEN is not set).'}
 										</p>
 									)}
-									{errors.length > 0 && (
-										<div role='status' className='mt-4 rounded-lg bg-amber-400/10 p-3 text-xs text-amber-200'>
-											<strong>{live ? 'Before saving' : 'Before downloading'}</strong>
-											<ul className='list-disc pl-4 mt-2 space-y-1'>
-												{errors.map((error) => (
-													<li key={error}>{error}</li>
-												))}
-											</ul>
+								</div>
+							) : (
+								<>
+									{search && !shown.length && !showSv2 && !showNode && !showAdvancedExtra && (
+										<p className='text-center text-white/60 text-sm'>No results found for “{query}”</p>
+									)}
+									{shown.map(fieldRow)}
+									{showSv2 && (
+										<StratumV2Settings config={config} disabled={!!parseError} onChange={change} onPatch={patch} />
+									)}
+									{showNode && (
+										<BitcoinNodeSettings
+											config={config}
+											disabled={!!parseError}
+											live={live}
+											passwordsSet={passwordsSet}
+											onChange={change}
+										/>
+									)}
+									{showAdvancedExtra && (
+										<div className='space-y-6 border-t border-white/20 pt-6 mb-6'>
+											<div className='flex flex-col gap-1 border-b border-white/20 pb-6'>
+												<div className='flex flex-row justify-between items-center gap-4'>
+													<div>
+														<label htmlFor='field-serverurl' className='text-[14px] font-normal text-white'>
+															Stratum V1 Listeners
+														</label>
+														<div className='my-1'>
+															<span className='text-[12px] text-white/50 bg-[#26343d] px-1 rounded-sm'>serverurl</span>
+														</div>
+													</div>
+													<InputField
+														id='field-serverurl'
+														className='max-w-[45%] sm:max-w-[240px]'
+														disabled={!!parseError}
+														placeholder='0.0.0.0:3333'
+														value={normalizeUrlList(config.serverurl).join(', ')}
+														onChange={(e) => {
+															const list = e.target.value
+																.split(/[,\n]/)
+																.map((part) => part.trim())
+																.filter(Boolean)
+															change('serverurl', list.length ? list : undefined)
+														}}
+													/>
+												</div>
+												<p className='text-[13px] text-white/60'>
+													Comma-separated host:port bindings for Stratum V1. Leaving blank binds all interfaces on port
+													3333.
+												</p>
+											</div>
+											<div className='flex justify-between items-center gap-4'>
+												<div>
+													<p className='text-[14px] text-white'>Allow Client Reconnect</p>
+													<span className='text-[12px] text-white/50 bg-[#26343d] px-1 rounded-sm'>reconnect</span>
+													<p className='text-[13px] text-white/60 mt-1'>
+														Allow Stratum V1 client.reconnect directives (enabled by default in CKPool).
+													</p>
+												</div>
+												<Toggle
+													name='Allow Client Reconnect'
+													checked={config.reconnect !== false}
+													disabled={!!parseError}
+													onToggle={(value) => change('reconnect', value ? undefined : false)}
+												/>
+											</div>
 										</div>
+									)}
+									{!search && (
+										<>
+											{tab === 'advanced' && (
+												<div>
+													<h3 className='font-outfit text-lg mb-2'>Custom Configuration</h3>
+													<p className='text-[13px] text-white/60 mb-4'>
+														Complete pool configuration JSON. Restricted keys (
+														<code className='font-mono'>donation</code>, <code className='font-mono'>btcaddress</code>,{' '}
+														<code className='font-mono'>logdir</code>) can only be edited directly on disk.
+													</p>
+													<textarea
+														aria-label='Pool configuration JSON'
+														className='w-full min-h-64 rounded-lg bg-black/30 border border-white/10 p-3 font-mono text-xs text-white/75 leading-6 focus:outline-[#76d9f5]'
+														value={raw}
+														onChange={(e) => setRaw(e.target.value)}
+														spellCheck={false}
+													/>
+												</div>
+											)}
+											{tab === 'logs' && <CKPoolLog />}
+										</>
+									)}
+									{(tab !== 'logs' || search) && (
+										<>
+											{live ? (
+												<div
+													data-testid='live-config-status'
+													role='status'
+													className='mt-5 flex flex-wrap items-center justify-between gap-2 rounded-lg bg-white/5 px-3 py-2 text-xs text-white/75'
+												>
+													<span className='flex items-center gap-2'>
+														{saveState === 'saving' ? (
+															<>
+																<Loader2 className='size-3.5 animate-spin text-[#76d9f5]' />
+																Saving configuration…
+															</>
+														) : saveState === 'error' ? (
+															<>
+																<AlertCircle className='size-3.5 text-amber-300' />
+																<span className='text-amber-200'>{saveError || 'Failed to save changes.'}</span>
+															</>
+														) : dirty ? (
+															<>
+																<AlertCircle className='size-3.5 text-[#76d9f5]' />
+																Unsaved changes · Click Save or Save &amp; Restart Pool
+															</>
+														) : pendingRestart ? (
+															<>
+																<CheckCircle2 className='size-3.5 text-amber-200' />
+																Saved to ckpool.conf · Click Save &amp; Restart Pool when ready to apply
+															</>
+														) : saveState === 'saved' ? (
+															<>
+																<CheckCircle2 className='size-3.5 text-emerald-300' />
+																Saved &amp; CKPool restart triggered
+															</>
+														) : (
+															<>
+																<CheckCircle2 className='size-3.5 text-[#76d9f5]' />
+																Live · Connected to /config/ckpool.conf
+															</>
+														)}
+													</span>
+													<Button type='button' size='sm' variant='ghost' onClick={lock} className='h-7 px-2 text-xs text-white/60 hover:text-white'>
+														<Lock className='size-3 mr-1' />
+														Lock
+													</Button>
+												</div>
+											) : (
+												<p className='text-[11px] text-white/40 mt-5 break-all'>
+													Editing {source}
+													{dirty ? ' · Unexported changes' : ''}. Local configuration, not the running pool.
+												</p>
+											)}
+											{errors.length > 0 && (
+												<div role='status' className='mt-4 rounded-lg bg-amber-400/10 p-3 text-xs text-amber-200'>
+													<strong>{live ? 'Before saving' : 'Before downloading'}</strong>
+													<ul className='list-disc pl-4 mt-2 space-y-1'>
+														{errors.map((error) => (
+															<li key={error}>{error}</li>
+														))}
+													</ul>
+												</div>
+											)}
+										</>
 									)}
 								</>
 							)}
@@ -523,30 +620,72 @@ export default function SettingsPage() {
 					Bassin on GitHub
 					<ExternalLink className='size-3' />
 				</a>
-				<div className='flex gap-2 w-full sm:w-auto justify-between'>
-					<input
-						type='file'
-						ref={file}
-						hidden
-						accept='.conf,.json,application/json'
-						onChange={(e) => {
-							void importFile(e.target.files?.[0])
-							e.target.value = ''
-						}}
-					/>
-					<Button
-						onClick={() => {
-							if (!dirty || window.confirm('Replace your unexported edits with an imported configuration?'))
-								file.current?.click()
-						}}
-					>
-						Import config
-					</Button>
-					<Button disabled={errors.length > 0} onClick={exportFile}>
-						<Download />
-						Download config
-					</Button>
-				</div>
+				{!locked && (
+					<div className='flex flex-wrap gap-2 w-full sm:w-auto justify-end'>
+						<input
+							type='file'
+							ref={file}
+							hidden
+							accept='.conf,.json,application/json'
+							onChange={(e) => {
+								void importFile(e.target.files?.[0])
+								e.target.value = ''
+							}}
+						/>
+						{live ? (
+							<>
+								{dirty && (
+									<Button type='button' variant='ghost' onClick={discard} disabled={saveState === 'saving'}>
+										Discard
+									</Button>
+								)}
+								<Button
+									type='button'
+									variant='secondary'
+									disabled={errors.length > 0 || !dirty || saveState === 'saving'}
+									onClick={() => void handleSave(false)}
+								>
+									<Save className='size-4' />
+									Save
+								</Button>
+								<Button
+									type='button'
+									disabled={errors.length > 0 || (!dirty && !pendingRestart) || saveState === 'saving'}
+									onClick={() => void handleSave(true)}
+								>
+									<RotateCw className='size-4' />
+									Save &amp; Restart Pool
+								</Button>
+								<Button
+									type='button'
+									variant='ghost'
+									size='sm'
+									disabled={errors.length > 0}
+									onClick={exportFile}
+									aria-label='Download config'
+									title='Download config backup'
+								>
+									<Download className='size-4' />
+								</Button>
+							</>
+						) : (
+							<>
+								<Button
+									onClick={() => {
+										if (!dirty || window.confirm('Replace your unexported edits with an imported configuration?'))
+											file.current?.click()
+									}}
+								>
+									Import config
+								</Button>
+								<Button disabled={errors.length > 0} onClick={exportFile}>
+									<Download />
+									Download config
+								</Button>
+							</>
+						)}
+					</div>
+				)}
 			</CardFooter>
 		</Card>
 	)

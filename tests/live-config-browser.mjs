@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import {spawn} from 'node:child_process'
-import {randomInt} from 'node:crypto'
-import {mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync} from 'node:fs'
+import {randomBytes, randomInt} from 'node:crypto'
+import {existsSync, mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync} from 'node:fs'
 import {tmpdir} from 'node:os'
 import {join, resolve} from 'node:path'
 import {pathToFileURL} from 'node:url'
@@ -20,12 +20,16 @@ mkdirSync(join(wwwDir, 'users'), {recursive: true})
 mkdirSync(cfgDir, {recursive: true})
 
 const configPath = join(cfgDir, 'ckpool.conf')
+const triggerPath = join(cfgDir, '.reload-trigger')
+const sessionSecret = randomBytes(16).toString('hex')
+
 writeFileSync(
 	configPath,
 	JSON.stringify(
 		{
 			btcd: [{url: '10.21.21.8:8332', auth: 'umbrel', pass: 'top-secret-password', notify: true}],
 			zmqblock: 'tcp://10.21.21.8:28332',
+			ipcmining: '/bitcoin/node.sock',
 			btcsig: '/mined by Bassin on Umbrel/',
 			mindiff: 1,
 			startdiff: 42,
@@ -63,6 +67,8 @@ const server = spawn(
 		wwwDir,
 		'--config',
 		configPath,
+		'--config-token',
+		sessionSecret,
 	],
 	{stdio: 'pipe'},
 )
@@ -70,7 +76,7 @@ const server = spawn(
 async function waitForServer(url) {
 	for (let i = 0; i < 40; i++) {
 		try {
-			const res = await fetch(`${url}/api/config`)
+			const res = await fetch(`${url}/health`)
 			if (res.ok) return
 		} catch {}
 		await new Promise((r) => setTimeout(r, 150))
@@ -90,53 +96,59 @@ try {
 	const page = await browser.newPage({viewport: {width: 1280, height: 900}})
 	const pageErrors = []
 	page.on('pageerror', (e) => pageErrors.push(e.message))
+	page.on('dialog', (dialog) => dialog.accept())
 
+	// 1. Settings starts locked (401) until unlocked with Bearer token.
 	await page.goto(`${baseUrl}/#/settings`, {waitUntil: 'networkidle'})
+	await page.getByTestId('config-auth-gate').waitFor()
+
+	// Logs tab stays accessible even while Settings is locked.
+	await page.getByRole('tab', {name: 'Logs'}).click()
+	await page.getByText('CKPool started').waitFor()
+
+	// Unlock with valid token.
+	await page.getByRole('tab', {name: 'Mining'}).click()
+	await page.getByLabel('Bassin config password').fill(sessionSecret)
+	await page.getByRole('button', {name: 'Unlock Settings'}).click()
 	await page.getByTestId('live-config-status').waitFor()
-	assert.match(await page.getByTestId('live-config-status').textContent(), /Live · Changes auto-save/)
-
-	// Ensure there are ZERO validation errors on initial load (even though RPC password is masked!).
+	assert.match(await page.getByTestId('live-config-status').textContent(), /Live · Connected/)
 	assert.equal(await page.getByText('Before saving').count(), 0)
-	assert.equal(await page.getByText('Before downloading').count(), 0)
 
-	// Verify Bitcoin Node tab masks password and shows saved placeholder.
-	await page.getByRole('tab', {name: 'Bitcoin Node'}).click()
-	assert.equal(await page.locator('#node-url').inputValue(), '10.21.21.8:8332')
-	assert.equal(await page.locator('#node-auth').inputValue(), 'umbrel')
-	assert.equal(await page.locator('#node-pass').inputValue(), '')
-	assert.match(await page.locator('#node-pass').getAttribute('placeholder'), /Saved on server/)
-
-	// Toggle Stratum V2 ON -> auto-saves cleanly with ZERO errors and preserves RPC password on disk!
+	// 2. Toggle Stratum V2 ON -> must NOT auto-save before explicit Save click!
 	await page.getByRole('tab', {name: 'Stratum V2'}).click()
 	await page.getByRole('switch', {name: 'Enable Stratum V2 Mining'}).click()
+	await page.waitForTimeout(800)
+	const beforeSave = JSON.parse(readFileSync(configPath, 'utf8'))
+	assert.equal(beforeSave.sv2url, undefined)
+	assert.equal(existsSync(triggerPath), false)
+
+	// 3. Explicit Save (no restart) writes config, preserves RPC password, and does NOT write .reload-trigger!
+	await page.getByRole('button', {name: 'Save', exact: true}).click()
 	await page.waitForFunction(
-		() => document.querySelector('[data-testid="live-config-status"]')?.textContent?.includes('Saved'),
+		() => document.querySelector('[data-testid="live-config-status"]')?.textContent?.includes('Saved to ckpool.conf'),
 		null,
 		{timeout: 5000},
 	)
-	assert.equal(await page.getByText('Before saving').count(), 0)
+	const afterSave = JSON.parse(readFileSync(configPath, 'utf8'))
+	assert.deepEqual(afterSave.sv2url, ['0.0.0.0:3336'])
+	assert.equal(afterSave.btcd[0].pass, 'top-secret-password')
+	assert.equal(existsSync(triggerPath), false)
 
-	const saved = JSON.parse(readFileSync(configPath, 'utf8'))
-	assert.deepEqual(saved.sv2url, ['0.0.0.0:3336'])
-	assert.equal(saved.sv2_authority_key, '/sv2/sv2_authority.key')
-	assert.equal(saved.sv2_static_key, '/sv2/sv2_static.key')
-	assert.equal(saved.btcd[0].pass, 'top-secret-password')
+	// 4. Explicit Save & Restart Pool triggers .reload-trigger (after confirming active workers).
+	await page.getByRole('button', {name: 'Save & Restart Pool'}).click()
+	await page.waitForFunction(
+		() => document.querySelector('[data-testid="live-config-status"]')?.textContent?.includes('restart triggered'),
+		null,
+		{timeout: 5000},
+	)
+	assert.equal(existsSync(triggerPath), true)
 
-	// Also edit Coinbase Signature in Mining tab -> auto-saves to disk.
-	await page.getByRole('tab', {name: 'Mining'}).click()
-	await page.locator('#field-btcsig').fill('/solo mined live/')
-	await page.waitForTimeout(800)
-	const savedAfterSig = JSON.parse(readFileSync(configPath, 'utf8'))
-	assert.equal(savedAfterSig.btcsig, '/solo mined live/')
-	assert.equal(savedAfterSig.btcd[0].pass, 'top-secret-password')
-
-	// Confirm Connect -> Stratum V2 reflects enabled state (no "Stratum V2 is disabled" banner).
-	await page.getByRole('button', {name: 'Connect'}).click()
-	await page.getByRole('tab', {name: 'Stratum V2'}).click()
-	assert.equal(await page.getByText('Stratum V2 is disabled').count(), 0)
+	// 5. Lock button clears session token and returns to auth gate.
+	await page.getByRole('button', {name: 'Lock'}).click()
+	await page.getByTestId('config-auth-gate').waitFor()
 
 	assert.deepEqual(pageErrors, [])
-	console.log('Live config auto-save browser test passed!')
+	console.log('Hardened live config browser test passed!')
 } finally {
 	await browser?.close()
 	server.kill('SIGTERM')

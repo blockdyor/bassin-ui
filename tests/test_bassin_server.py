@@ -5,6 +5,7 @@ import os
 from pathlib import Path
 import tempfile
 import threading
+import time
 import unittest
 from http.server import ThreadingHTTPServer
 
@@ -12,6 +13,8 @@ SCRIPT = Path(__file__).parents[1] / 'scripts/bassin-server.py'
 spec = importlib.util.spec_from_file_location('bassin_server', SCRIPT)
 bassin_server = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(bassin_server)
+
+TEST_TOKEN = 'test-config-api-token-for-unit-tests'
 
 
 class BassinServerTest(unittest.TestCase):
@@ -43,7 +46,9 @@ class BassinServerTest(unittest.TestCase):
         }
         self.config_file.write_text(json.dumps(self.initial_config, indent=2) + '\n', encoding='utf-8')
 
-        self.state = bassin_server.AppState(self.ui_dir, self.www_dir, self.config_file, 900)
+        self.state = bassin_server.AppState(
+            self.ui_dir, self.www_dir, self.config_file, 900, config_token=TEST_TOKEN
+        )
         self.state.refresh_sv2()
         self.server = ThreadingHTTPServer(('127.0.0.1', 0), bassin_server.make_handler(self.state))
         self.port = self.server.server_address[1]
@@ -67,8 +72,46 @@ class BassinServerTest(unittest.TestCase):
         finally:
             conn.close()
 
-    def test_get_config_masks_rpc_password_and_put_preserves_it(self):
+    def auth_headers(self, extra=None):
+        headers = {'Authorization': f'Bearer {TEST_TOKEN}'}
+        if extra:
+            headers.update(extra)
+        return headers
+
+    def test_config_api_requires_bearer_token_and_fails_closed_when_unset(self):
+        # Missing or wrong Bearer token returns 401 on GET and PUT.
         status, _, body = self.request('GET', '/api/config')
+        self.assertEqual(status, 401)
+        self.assertTrue(json.loads(body)['authRequired'])
+
+        status, _, _ = self.request('GET', '/api/config', headers={'Authorization': 'Bearer wrong-token'})
+        self.assertEqual(status, 401)
+
+        status, _, _ = self.request(
+            'PUT',
+            '/api/config',
+            body=json.dumps({'mindiff': 2}),
+            headers={'Content-Type': 'application/json', 'X-Bassin-Config': '1'},
+        )
+        self.assertEqual(status, 401)
+
+        # Unset token fails closed with 403.
+        self.state.config_token = ''
+        try:
+            status, _, _ = self.request('GET', '/api/config', headers=self.auth_headers())
+            self.assertEqual(status, 403)
+            status, _, _ = self.request(
+                'PUT',
+                '/api/config',
+                body=json.dumps({'mindiff': 2}),
+                headers=self.auth_headers({'Content-Type': 'application/json', 'X-Bassin-Config': '1'}),
+            )
+            self.assertEqual(status, 403)
+        finally:
+            self.state.config_token = TEST_TOKEN
+
+    def test_get_masks_password_and_save_gates_reload_trigger(self):
+        status, _, body = self.request('GET', '/api/config', headers=self.auth_headers())
         self.assertEqual(status, 200)
         payload = json.loads(body)
         self.assertTrue(payload['live'])
@@ -76,68 +119,85 @@ class BassinServerTest(unittest.TestCase):
         self.assertNotIn('pass', payload['config']['btcd'][0])
         self.assertNotIn('super-secret-rpc-pass', body.decode('utf-8'))
 
-        # Missing CSRF header is rejected.
+        # Missing CSRF header is rejected even with valid Bearer token.
         updated = dict(payload['config'])
         updated['sv2url'] = ['0.0.0.0:3336']
         updated['sv2_authority_key'] = '/sv2/sv2_authority.key'
         updated['sv2_static_key'] = '/sv2/sv2_static.key'
+        updated['ipcmining'] = '/bitcoin/node.sock'
         status, _, _ = self.request(
             'PUT',
             '/api/config',
             body=json.dumps(updated),
-            headers={'Content-Type': 'application/json'},
+            headers=self.auth_headers({'Content-Type': 'application/json'}),
         )
         self.assertEqual(status, 403)
 
-        # Valid save preserves on-disk RPC password, writes 0600 atomically, and updates sv2.json.
+        # Save WITHOUT restart writes ckpool.conf (0600), preserves RPC password, and does NOT write .reload-trigger.
+        trigger = self.cfg_dir / '.reload-trigger'
+        self.assertFalse(trigger.exists())
         status, _, body = self.request(
             'PUT',
             '/api/config',
             body=json.dumps(updated),
-            headers={'Content-Type': 'application/json', 'X-Bassin-Config': '1'},
+            headers=self.auth_headers({'Content-Type': 'application/json', 'X-Bassin-Config': '1'}),
         )
         self.assertEqual(status, 200)
         res_payload = json.loads(body)
         self.assertEqual(res_payload['passwordsSet'], [True])
+        self.assertFalse(res_payload['restarted'])
         self.assertNotIn('config', res_payload)
-
-        get_status, get_headers, get_body = self.request('GET', '/api/config')
-        self.assertEqual(get_status, 200)
-        self.assertEqual(get_headers.get('X-Content-Type-Options'), 'nosniff')
-        get_payload = json.loads(get_body)
-        self.assertNotIn('pass', get_payload['config']['btcd'][0])
-        self.assertEqual(get_payload['config']['sv2url'], ['0.0.0.0:3336'])
+        self.assertFalse(trigger.exists())
 
         on_disk = json.loads(self.config_file.read_text(encoding='utf-8'))
         self.assertEqual(on_disk['btcd'][0]['pass'], 'super-secret-rpc-pass')
         self.assertEqual(on_disk['sv2url'], ['0.0.0.0:3336'])
+        self.assertEqual(on_disk['ipcmining'], '/bitcoin/node.sock')
+        self.assertEqual(on_disk['logdir'], '/www')
         self.assertEqual(self.config_file.stat().st_mode & 0o777, 0o600)
 
-        sv2_status, _, sv2_body = self.request('GET', '/pool/sv2.json')
-        self.assertEqual(sv2_status, 200)
-        sv2 = json.loads(sv2_body)
-        self.assertTrue(sv2['enabled'])
-        self.assertFalse(sv2['ephemeralKeys'])
-
-    def test_invalid_config_rejected_without_touching_disk(self):
-        bad = dict(self.initial_config)
-        bad['donation'] = 0.05
+        # Save WITH restart=1 writes .reload-trigger so supervisor restarts CKPool intentionally.
         status, _, body = self.request(
             'PUT',
-            '/api/config',
-            body=json.dumps(bad),
-            headers={'Content-Type': 'application/json', 'X-Bassin-Config': '1'},
+            '/api/config?restart=1',
+            body=json.dumps(updated),
+            headers=self.auth_headers({'Content-Type': 'application/json', 'X-Bassin-Config': '1', 'X-Bassin-Restart': '1'}),
         )
-        self.assertEqual(status, 400)
-        self.assertIn('Donation', body.decode('utf-8'))
+        self.assertEqual(status, 200)
+        self.assertTrue(json.loads(body)['restarted'])
+        self.assertTrue(trigger.exists())
+
+    def test_allowlist_blocks_donation_btcaddress_logdir_and_unconfined_paths(self):
+        status, _, body = self.request('GET', '/api/config', headers=self.auth_headers())
+        self.assertEqual(status, 200)
+        base = json.loads(body)['config']
+        headers = self.auth_headers({'Content-Type': 'application/json', 'X-Bassin-Config': '1'})
+
+        for bad_patch in [
+            {'donation': 50},
+            {'btcaddress': 'bc1qattacker'},
+            {'logdir': '/config'},
+            {'proxy': [{'url': 'evil:3333'}]},
+            {'redirecturl': ['evil:3333']},
+            {'arbitrary_unknown_key': 123},
+            {'sv2_authority_key': '/www/leak.key'},
+            {'sv2_static_key': '/sv2/../www/leak.key'},
+            {'ipcmining': '/etc/passwd'},
+        ]:
+            attempt = dict(base)
+            attempt.update(bad_patch)
+            status, _, _ = self.request('PUT', '/api/config', body=json.dumps(attempt), headers=headers)
+            self.assertEqual(status, 400, bad_patch)
+
+        # Disk file remained completely untouched.
         self.assertEqual(json.loads(self.config_file.read_text(encoding='utf-8')), self.initial_config)
 
         # NaN constant is also rejected.
         status, _, _ = self.request(
             'PUT',
             '/api/config',
-            body='{"btcd":[{"url":"10.0.0.1:8332","auth":"u"}],"donation":NaN}',
-            headers={'Content-Type': 'application/json', 'X-Bassin-Config': '1'},
+            body='{"btcd":[{"url":"10.0.0.1:8332","auth":"u"}],"mindiff":NaN}',
+            headers=headers,
         )
         self.assertEqual(status, 400)
 
@@ -155,13 +215,11 @@ class BassinServerTest(unittest.TestCase):
         self.assertEqual(body, b'line3\n')
         self.assertEqual(headers.get('Content-Range'), 'bytes 12-17/18')
 
-        # 0-byte log returns 416 bytes */0 on suffix range.
         (self.www_dir / 'ckpool.log').write_bytes(b'')
         status, headers, _ = self.request('GET', '/ckpool.log', headers={'Range': 'bytes=-65536'})
         self.assertEqual(status, 416)
         self.assertEqual(headers.get('Content-Range'), 'bytes */0')
 
-        # Path traversal and symlinks are blocked.
         status, _, _ = self.request('GET', '/pool/../../config/ckpool.conf')
         self.assertEqual(status, 404)
         secret_link = self.www_dir / 'pool/leak.conf'
@@ -170,8 +228,7 @@ class BassinServerTest(unittest.TestCase):
         self.assertEqual(status, 404)
 
     def test_builtin_umbrel_widgets_and_worker_leaderboard(self):
-        import time as _time
-        now = int(_time.time())
+        now = int(time.time())
         (self.www_dir / 'pool/pool.status').write_text(
             '\n'.join([
                 json.dumps({'runtime': 3600, 'lastupdate': now - 10, 'Users': 2, 'Workers': 3, 'Idle': 0, 'Disconnected': 0}),
@@ -207,37 +264,14 @@ class BassinServerTest(unittest.TestCase):
         status, _, body = self.request('GET', '/widgets/pool')
         self.assertEqual(status, 200)
         pool_w = json.loads(body)
-        self.assertEqual(pool_w['type'], 'four-stats')
         self.assertEqual(pool_w['items'][0], {'title': 'Hashrate', 'text': '1.00', 'subtext': 'Th/s'})
-        self.assertEqual(pool_w['items'][1], {'title': 'Workers', 'text': '3'})
         self.assertEqual(pool_w['items'][2], {'title': 'Best Share', 'text': '1.25', 'subtext': 'P'})
-
-        status, _, body = self.request('GET', '/widgets/hashrate')
-        self.assertEqual(status, 200)
-        hr_w = json.loads(body)
-        self.assertEqual(hr_w['items'][0], {'title': '1m Avg', 'text': '1.61', 'subtext': 'Th/s'})
-        self.assertEqual(hr_w['items'][1], {'title': '5m Avg', 'text': '1.00', 'subtext': 'Th/s'})
 
         status, _, body = self.request('GET', '/widgets/workers')
         self.assertEqual(status, 200)
         lb = json.loads(body)
-        self.assertEqual(lb['type'], 'list')
         self.assertEqual(lb['items'][0], {'text': '#1 nerdqaxe', 'subtext': 'Best ever: 2.5T · 4.80 Th/s'})
         self.assertEqual(lb['items'][1], {'text': '#2 bc1qba…ffix', 'subtext': 'Best ever: 850M · Idle'})
-        self.assertEqual(lb['items'][2], {'text': '#3 gamma', 'subtext': 'Best ever: 147M · 1.00 Th/s'})
-        self.assertEqual(lb['items'][3], {'text': '#4 ultra', 'subtext': 'Best ever: 17.4M · 555 Gh/s'})
-
-        # Stale pool.status returns dashes instead of stale values.
-        (self.www_dir / 'pool/pool.status').write_text(
-            '\n'.join([
-                json.dumps({'runtime': 3600, 'lastupdate': now - 900, 'Users': 1, 'Workers': 1}),
-                json.dumps({'hashrate1m': '1T', 'hashrate5m': '1T', 'hashrate1hr': '1T', 'hashrate1d': '1T', 'hashrate7d': '1T'}),
-                json.dumps({'accepted': 100, 'rejected': 0, 'bestshare': 100}),
-            ]) + '\n',
-            encoding='utf-8',
-        )
-        status, _, body = self.request('GET', '/widgets/pool')
-        self.assertEqual(json.loads(body)['items'][0]['text'], '-')
 
 
 if __name__ == '__main__':

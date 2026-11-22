@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Serve Bassin UI, pool data, and live ckpool.conf API; publish location & SV2 metadata."""
 import argparse
+import hmac
 import html
 import importlib.util
 import ipaddress
@@ -8,6 +9,7 @@ import json
 import math
 import mimetypes
 import os
+import posixpath
 import re
 import secrets
 import threading
@@ -15,13 +17,23 @@ import time
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
-from urllib.parse import unquote, urlsplit
+from urllib.parse import parse_qs, unquote, urlsplit
 
 spec = importlib.util.spec_from_file_location('pool_location', Path(__file__).with_name('pool-location.py'))
 pool_location = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(pool_location)
 
 MAX_CONFIG_BYTES = 1024 * 1024
+ALLOWED_EDIT_KEYS = frozenset({
+    'mindiff', 'startdiff', 'highdiff', 'maxdiff', 'btcsig', 'version_mask',
+    'dropidle', 'update_interval', 'nonce1length', 'nonce2length',
+    'maxclients', 'maxusers', 'maxsubclients', 'maxsendqueue', 'reconnect',
+    'serverurl', 'sv2url', 'sv2jdurl', 'sv2_authority_key', 'sv2_static_key',
+    'zmqblock', 'blockpoll', 'ipcmining', 'btcd',
+})
+BLOCKED_KEYS = frozenset({'donation', 'btcaddress', 'logdir', 'proxy', 'redirecturl'})
+SV2_KEY_PREFIXES = ('/sv2/',)
+IPC_PATH_PREFIXES = ('/bitcoin/', '/run/bitcoind/')
 MAX_WIDGET_FILE_BYTES = 256 * 1024
 MAX_WIDGET_USERS = 500
 WIDGET_REFRESH = '30s'
@@ -95,6 +107,81 @@ def valid_host(host):
 
 def valid_path(value):
     return isinstance(value, str) and bool(value.strip()) and not CONTROL_RE.search(value)
+
+
+def valid_confined_path(value, prefixes):
+    if not valid_path(value):
+        return False
+    if not value.startswith('/') or '..' in value.split('/'):
+        return False
+    normalized = posixpath.normpath(value)
+    return any(normalized.startswith(prefix) and len(normalized) > len(prefix) for prefix in prefixes)
+
+
+def apply_allowed_edits(incoming, existing):
+    """Enforce key allowlist and preserve non-editable on-disk keys unchanged."""
+    old = existing if isinstance(existing, dict) else {}
+    errors = []
+    blocked_hit = False
+    unknown_hit = False
+
+    for key, val in incoming.items():
+        if key in ALLOWED_EDIT_KEYS:
+            continue
+        if key in old and old[key] == val:
+            continue
+        if key in BLOCKED_KEYS:
+            blocked_hit = True
+        else:
+            unknown_hit = True
+
+    if blocked_hit:
+        errors.append('Modifying restricted keys (donation, btcaddress, logdir, proxy, redirecturl) via the Config API is not permitted.')
+    if unknown_hit:
+        errors.append('Adding or modifying non-allowlisted keys via the Config API is not permitted.')
+    if errors:
+        return None, errors
+
+    merged = {}
+    # Preserve existing non-allowlisted keys (e.g. logdir or manually configured disk-only options).
+    for key, val in old.items():
+        if key not in ALLOWED_EDIT_KEYS:
+            merged[key] = val
+    for key in ALLOWED_EDIT_KEYS:
+        if key in incoming:
+            merged[key] = incoming[key]
+
+    if 'sv2_authority_key' in merged and not valid_confined_path(merged['sv2_authority_key'], SV2_KEY_PREFIXES):
+        errors.append('SV2 authority key path must stay inside /sv2/.')
+    if 'sv2_static_key' in merged and not valid_confined_path(merged['sv2_static_key'], SV2_KEY_PREFIXES):
+        errors.append('SV2 static key path must stay inside /sv2/.')
+    if 'ipcmining' in merged and not valid_confined_path(merged['ipcmining'], IPC_PATH_PREFIXES):
+        errors.append('Mining IPC socket path must stay inside /bitcoin/ or /run/bitcoind/.')
+
+    if errors:
+        return None, errors
+    return merged, []
+
+
+def write_reload_trigger(config_path):
+    trigger = Path(config_path).with_name('.reload-trigger')
+    name = pool_location.local_name(trigger.name)
+    token = f'{int(time.time() * 1000)}-{secrets.token_hex(8)}\n'
+    with pool_location.parent_directory(trigger, create=True) as directory:
+        temporary = '.reload-trigger.' + secrets.token_hex(8)
+        fd = os.open(temporary, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o644, dir_fd=directory)
+        try:
+            with os.fdopen(fd, 'w', encoding='utf-8') as file:
+                file.write(token)
+                file.flush()
+                os.fsync(file.fileno())
+            os.replace(temporary, name, src_dir_fd=directory, dst_dir_fd=directory)
+        except BaseException:
+            try:
+                os.unlink(temporary, dir_fd=directory)
+            except OSError:
+                pass
+            raise
 
 
 def valid_zmq(value):
@@ -266,10 +353,11 @@ def safe_resolve(root, rel_path):
 
 
 class AppState:
-    def __init__(self, ui_dir, www_dir, config_file, interval):
+    def __init__(self, ui_dir, www_dir, config_file, interval, config_token=''):
         self.ui_dir = Path(ui_dir)
         self.www_dir = Path(www_dir)
         self.config_file = Path(config_file)
+        self.config_token = (config_token or '').strip()
         self.location_output = self.www_dir / 'pool/location.json'
         self.sv2_output = self.www_dir / 'pool/sv2.json'
         self.log_file = self.www_dir / 'ckpool.log'
@@ -589,7 +677,28 @@ def make_handler(state):
         def log_message(self, format, *args):
             return
 
-        def send_json(self, status, payload, close=False):
+        def check_config_auth(self, close_on_fail=False):
+            if not state.config_token:
+                self.send_json(
+                    HTTPStatus.FORBIDDEN,
+                    {'live': True, 'authRequired': False, 'error': 'Config API disabled: BASSIN_CONFIG_TOKEN is not set.'},
+                    close=close_on_fail,
+                )
+                return False
+            auth = self.headers.get('Authorization', '')
+            if auth.startswith('Bearer '):
+                provided = auth[7:].strip()
+                if provided and hmac.compare_digest(provided, state.config_token):
+                    return True
+            self.send_json(
+                HTTPStatus.UNAUTHORIZED,
+                {'live': True, 'authRequired': True, 'error': 'Authentication required.'},
+                close=close_on_fail,
+                extra_headers={'WWW-Authenticate': 'Bearer realm="Bassin Config"'},
+            )
+            return False
+
+        def send_json(self, status, payload, close=False, extra_headers=None):
             body = json.dumps(payload, allow_nan=False).encode('utf-8')
             if close:
                 self.close_connection = True
@@ -597,6 +706,9 @@ def make_handler(state):
             self.send_header('Content-Type', 'application/json')
             self.send_header('X-Content-Type-Options', 'nosniff')
             self.send_header('Cache-Control', 'no-store')
+            if extra_headers:
+                for header_name, header_val in extra_headers.items():
+                    self.send_header(header_name, header_val)
             if close:
                 self.send_header('Connection', 'close')
             self.send_header('Content-Length', str(len(body)))
@@ -680,6 +792,8 @@ def make_handler(state):
             self.send_json(HTTPStatus.OK, payload)
 
         def handle_get_config(self):
+            if not self.check_config_auth(close_on_fail=False):
+                return
             with state.config_lock:
                 try:
                     config = pool_location.read_json(state.config_file)
@@ -692,9 +806,11 @@ def make_handler(state):
                 self.send_json(HTTPStatus.OK, {'live': True, 'config': masked, 'passwordsSet': passwords_set})
 
         def handle_save_config(self):
-            path = urlsplit(self.path).path
-            if path != '/api/config':
+            parts = urlsplit(self.path)
+            if parts.path != '/api/config':
                 self.send_json(HTTPStatus.NOT_FOUND, {'error': 'Not found'}, close=True)
+                return
+            if not self.check_config_auth(close_on_fail=True):
                 return
             if self.headers.get('X-Bassin-Config') != '1':
                 self.send_json(HTTPStatus.FORBIDDEN, {'error': 'Missing required X-Bassin-Config header.'}, close=True)
@@ -718,28 +834,41 @@ def make_handler(state):
             if not isinstance(incoming, dict):
                 self.send_json(HTTPStatus.BAD_REQUEST, {'error': 'Configuration must be a JSON object.'})
                 return
+            query = parse_qs(parts.query)
+            restart = (
+                self.headers.get('X-Bassin-Restart') == '1'
+                or query.get('restart', [''])[0] in ('1', 'true')
+            )
             with state.config_lock:
                 try:
                     existing = pool_location.read_json(state.config_file)
                 except (OSError, ValueError):
                     existing = {}
-                merged = merge_passwords(incoming, existing)
+                filtered, allow_errors = apply_allowed_edits(incoming, existing)
+                if allow_errors:
+                    self.send_json(HTTPStatus.BAD_REQUEST, {'error': allow_errors[0], 'errors': allow_errors})
+                    return
+                merged = merge_passwords(filtered, existing)
                 errors = validate_config(merged)
                 if errors:
                     self.send_json(HTTPStatus.BAD_REQUEST, {'error': errors[0], 'errors': errors})
                     return
                 try:
                     write_config_atomic(state.config_file, merged)
+                    if restart:
+                        write_reload_trigger(state.config_file)
                 except OSError:
                     self.send_json(HTTPStatus.INTERNAL_SERVER_ERROR, {'error': 'Failed to save configuration.'})
                     return
                 _, passwords_set = mask_config(merged)
             state.refresh_sv2()
-            state.refresh_event.set()
+            if restart:
+                state.refresh_event.set()
             self.send_json(HTTPStatus.OK, {
                 'live': True,
                 'passwordsSet': [bool(flag) for flag in passwords_set],
                 'savedAt': int(time.time() * 1000),
+                'restarted': restart,
             })
 
         def handle_users_index(self):
@@ -843,13 +972,15 @@ def main():
     parser.add_argument('--ui-dir', type=Path, default=Path('/ui'))
     parser.add_argument('--www-dir', type=Path, default=Path('/www'))
     parser.add_argument('--config', type=Path, default=Path('/config/ckpool.conf'))
+    parser.add_argument('--config-token', default=None)
     parser.add_argument('--interval', type=int, default=900)
     args = parser.parse_args()
 
     # Use a compact 256 KiB thread stack (vs 8 MiB default) to keep RAM usage minimal.
     threading.stack_size(256 * 1024)
 
-    state = AppState(args.ui_dir, args.www_dir, args.config, args.interval)
+    token = args.config_token if args.config_token is not None else os.environ.get('BASSIN_CONFIG_TOKEN', '')
+    state = AppState(args.ui_dir, args.www_dir, args.config, args.interval, config_token=token)
     state.refresh_sv2()
     worker = threading.Thread(target=state.background_loop, daemon=True)
     worker.start()

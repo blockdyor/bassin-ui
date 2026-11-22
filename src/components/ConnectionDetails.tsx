@@ -144,8 +144,7 @@ export default function ConnectionDetails() {
 						<TabsContent value='stratum-v2' className='mt-4 min-h-[310px] space-y-4'>
 							{sv2 && !sv2.enabled && (
 								<p role='status' className='text-xs text-amber-200 bg-amber-400/10 rounded-lg p-3'>
-									Stratum V2 is disabled. Toggle it on in Settings → Stratum V2 — changes save and reload CKPool
-									automatically.
+									Stratum V2 is disabled. Enable it in Settings → Stratum V2 and click Save &amp; Restart Pool.
 								</p>
 							)}
 							{sv2?.enabled && sv2.ephemeralKeys && (
