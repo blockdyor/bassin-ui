@@ -22,6 +22,23 @@ pool_location = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(pool_location)
 
 MAX_CONFIG_BYTES = 1024 * 1024
+MAX_WIDGET_FILE_BYTES = 256 * 1024
+MAX_WIDGET_USERS = 500
+WIDGET_REFRESH = '30s'
+WIDGET_STALE_SECONDS = 300
+WIDGET_MAX_WORKERS = 5
+HASHRATE_UNITS = ('', 'K', 'M', 'G', 'T', 'P', 'E', 'Z', 'Y')
+HASHRATE_RE = re.compile(r'^(\d+(?:\.\d+)?(?:e[+-]?\d+)?)\s*([KMGTPEZY])?H?(?:/s)?$', re.IGNORECASE)
+ABBR_UNITS = (
+    (1e24, 'Y'),
+    (1e21, 'Z'),
+    (1e18, 'E'),
+    (1e15, 'P'),
+    (1e12, 'T'),
+    (1e9, 'G'),
+    (1e6, 'M'),
+    (1e3, 'K'),
+)
 HOST_PORT_RE = re.compile(r'^(\[[^\]]+\]|[a-zA-Z0-9_-]+(?:\.[a-zA-Z0-9_-]+)*\.?):(\d+)$')
 HOST_ONLY_RE = re.compile(r'^(\[[^\]]+\]|[a-zA-Z0-9_-]+(?:\.[a-zA-Z0-9_-]+)*\.?)$')
 HEX_MASK_RE = re.compile(r'^[0-9a-fA-F]{1,8}$')
@@ -322,9 +339,252 @@ class AppState:
                     self.refresh_sv2()
 
 
+def is_non_negative_num(value):
+    return type(value) in (int, float) and math.isfinite(value) and value >= 0
+
+
+def format_compact(num):
+    if not is_non_negative_num(num):
+        return '-'
+    if num == 0:
+        return '0'
+    if num >= 100:
+        return f'{num:.0f}'
+    if num >= 10:
+        return f'{num:.1f}'.rstrip('0').rstrip('.')
+    return f'{num:.2f}'.rstrip('0').rstrip('.')
+
+
+def parse_hashrate_hps(raw):
+    if not isinstance(raw, str):
+        return None
+    match = HASHRATE_RE.fullmatch(raw.strip())
+    if not match:
+        return None
+    try:
+        num = float(match.group(1))
+    except ValueError:
+        return None
+    if not math.isfinite(num) or num < 0:
+        return None
+    prefix = (match.group(2) or '').upper()
+    if prefix not in HASHRATE_UNITS:
+        return None
+    hps = num * (1000 ** HASHRATE_UNITS.index(prefix))
+    return hps if math.isfinite(hps) else None
+
+
+def format_hashrate(raw):
+    hps = parse_hashrate_hps(raw)
+    if hps is None:
+        return {'value': '-', 'unit': ''}
+    if hps == 0:
+        return {'value': '0', 'unit': 'H/s'}
+    scaled = hps
+    idx = 0
+    while scaled >= 1000 and idx < len(HASHRATE_UNITS) - 1:
+        scaled /= 1000.0
+        idx += 1
+    prefix = HASHRATE_UNITS[idx]
+    unit = f'{prefix}h/s' if prefix else 'H/s'
+    value = f'{scaled:.0f}' if scaled >= 100 else f'{scaled:.2f}'
+    return {'value': value, 'unit': unit}
+
+
+def abbreviate_number(value):
+    if not is_non_negative_num(value):
+        return {'value': '-', 'unit': ''}
+    for threshold, unit in ABBR_UNITS:
+        if value >= threshold:
+            return {'value': format_compact(value / threshold), 'unit': unit}
+    if isinstance(value, int) or float(value).is_integer():
+        return {'value': str(int(value)), 'unit': ''}
+    return {'value': format_compact(value), 'unit': ''}
+
+
+def short_worker_name(full_name):
+    trimmed = full_name.strip()
+    if not trimmed:
+        return 'unnamed'
+    for idx, ch in enumerate(trimmed):
+        if ch in '._' and 0 < idx < len(trimmed) - 1:
+            return trimmed[idx + 1:]
+    if len(trimmed) > 14:
+        return f'{trimmed[:6]}…{trimmed[-4:]}'
+    return trimmed
+
+
+def read_bounded_text(path, limit=MAX_WIDGET_FILE_BYTES):
+    fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW)
+    try:
+        data = os.read(fd, limit + 1)
+    finally:
+        os.close(fd)
+    if len(data) > limit:
+        raise ValueError('File exceeds size limit')
+    return data.decode('utf-8')
+
+
+def parse_pool_status_file(path, now_sec=None, stale_seconds=WIDGET_STALE_SECONDS):
+    text = read_bounded_text(path)
+    lines = [line.strip() for line in text.splitlines() if line.strip()]
+    if len(lines) < 3:
+        return None
+    parts = [json.loads(line) for line in lines[:3]]
+    if any(not isinstance(part, dict) for part in parts):
+        return None
+    merged = {}
+    for part in parts:
+        merged.update(part)
+    for key in ('runtime', 'lastupdate', 'Users', 'Workers', 'accepted', 'rejected', 'bestshare'):
+        if not is_non_negative_num(merged.get(key)):
+            return None
+    for key in ('hashrate1m', 'hashrate5m', 'hashrate1hr', 'hashrate1d', 'hashrate7d'):
+        if parse_hashrate_hps(merged.get(key)) is None:
+            return None
+    now = time.time() if now_sec is None else now_sec
+    if now - merged['lastupdate'] > stale_seconds:
+        return None
+    return merged
+
+
+def build_pool_widget(pool):
+    if not pool:
+        return {
+            'type': 'four-stats',
+            'refresh': WIDGET_REFRESH,
+            'link': '',
+            'items': [
+                {'title': 'Hashrate', 'text': '-'},
+                {'title': 'Workers', 'text': '-'},
+                {'title': 'Best Share', 'text': '-'},
+                {'title': 'Total Shares', 'text': '-'},
+            ],
+        }
+    hr5m = format_hashrate(pool['hashrate5m'])
+    workers = int(pool['Workers'])
+    best = abbreviate_number(pool['bestshare'])
+    accepted = abbreviate_number(pool['accepted'])
+    return {
+        'type': 'four-stats',
+        'refresh': WIDGET_REFRESH,
+        'link': '',
+        'items': [
+            {'title': 'Hashrate', 'text': hr5m['value'], 'subtext': hr5m['unit']},
+            {'title': 'Worker' if workers == 1 else 'Workers', 'text': str(workers)},
+            {'title': 'Best Share', 'text': best['value'], 'subtext': best['unit']},
+            {'title': 'Total Shares', 'text': accepted['value'], 'subtext': accepted['unit']},
+        ],
+    }
+
+
+def build_hashrate_widget(pool):
+    if not pool:
+        return {
+            'type': 'four-stats',
+            'refresh': WIDGET_REFRESH,
+            'link': '',
+            'items': [
+                {'title': '1m Avg', 'text': '-'},
+                {'title': '5m Avg', 'text': '-'},
+                {'title': '1h Avg', 'text': '-'},
+                {'title': '24h Avg', 'text': '-'},
+            ],
+        }
+    h1m = format_hashrate(pool['hashrate1m'])
+    h5m = format_hashrate(pool['hashrate5m'])
+    h1h = format_hashrate(pool['hashrate1hr'])
+    h1d = format_hashrate(pool['hashrate1d'])
+    return {
+        'type': 'four-stats',
+        'refresh': WIDGET_REFRESH,
+        'link': '',
+        'items': [
+            {'title': '1m Avg', 'text': h1m['value'], 'subtext': h1m['unit']},
+            {'title': '5m Avg', 'text': h5m['value'], 'subtext': h5m['unit']},
+            {'title': '1h Avg', 'text': h1h['value'], 'subtext': h1h['unit']},
+            {'title': '24h Avg', 'text': h1d['value'], 'subtext': h1d['unit']},
+        ],
+    }
+
+
+def load_ranked_workers(users_dir, limit=WIDGET_MAX_WORKERS):
+    if not users_dir or not users_dir.is_dir():
+        return []
+    workers = []
+    scanned = 0
+    for child in sorted(users_dir.iterdir(), key=lambda p: p.name):
+        if scanned >= MAX_WIDGET_USERS:
+            break
+        if child.name.startswith('.') or child.is_symlink() or not child.is_file():
+            continue
+        scanned += 1
+        try:
+            data = json.loads(read_bounded_text(child))
+        except (OSError, ValueError):
+            continue
+        raw_workers = data.get('worker') if isinstance(data, dict) else None
+        if not isinstance(raw_workers, list):
+            continue
+        for item in raw_workers:
+            if not isinstance(item, dict):
+                continue
+            name = item.get('workername')
+            if not isinstance(name, str) or not name.strip():
+                continue
+            hps = parse_hashrate_hps(item.get('hashrate5m'))
+            if hps is None:
+                continue
+            bestshare = item['bestshare'] if is_non_negative_num(item.get('bestshare')) else 0
+            bestever = item['bestever'] if is_non_negative_num(item.get('bestever')) else 0
+            workers.append({
+                'workername': name,
+                'display': short_worker_name(name),
+                'hashrate5m': item['hashrate5m'],
+                'hps': hps,
+                'best_ever': max(bestever, bestshare),
+            })
+    workers.sort(key=lambda w: (-w['best_ever'], -w['hps'], w['display']))
+    return workers[:max(1, limit)]
+
+
+def build_workers_leaderboard_widget(users_dir, limit=WIDGET_MAX_WORKERS):
+    ranked = load_ranked_workers(users_dir, limit)
+    if not ranked:
+        return {
+            'type': 'list',
+            'refresh': WIDGET_REFRESH,
+            'link': '',
+            'items': [{'text': 'No workers yet', 'subtext': 'Connect a miner to start ranking'}],
+        }
+    counts = {}
+    for w in ranked:
+        counts[w['display']] = counts.get(w['display'], 0) + 1
+    items = []
+    for idx, w in enumerate(ranked, start=1):
+        best = abbreviate_number(w['best_ever'])
+        best_str = f"{best['value']}{best['unit']}"
+        hr = format_hashrate(w['hashrate5m'])
+        rate_str = f"{hr['value']} {hr['unit']}" if w['hps'] > 0 else 'Idle'
+        label = w['display']
+        if counts[label] > 1:
+            label = f"{label} ({w['workername'][:6]}…)"
+        items.append({
+            'text': f'#{idx} {label}',
+            'subtext': f'Best ever: {best_str} · {rate_str}',
+        })
+    return {
+        'type': 'list',
+        'refresh': WIDGET_REFRESH,
+        'link': '',
+        'items': items,
+    }
+
+
 def make_handler(state):
     class Handler(BaseHTTPRequestHandler):
         protocol_version = 'HTTP/1.1'
+        timeout = 15
 
         def log_message(self, format, *args):
             return
@@ -360,6 +620,18 @@ def make_handler(state):
 
         def do_GET(self):
             path = urlsplit(self.path).path
+            if path == '/health':
+                self.send_json(HTTPStatus.OK, {'status': 'ok'})
+                return
+            if path == '/widgets/pool':
+                self.handle_widget_pool()
+                return
+            if path == '/widgets/hashrate':
+                self.handle_widget_hashrate()
+                return
+            if path == '/widgets/workers':
+                self.handle_widget_workers()
+                return
             if path == '/api/config':
                 self.handle_get_config()
                 return
@@ -377,6 +649,35 @@ def make_handler(state):
 
         def do_POST(self):
             self.handle_save_config()
+
+        def handle_widget_pool(self):
+            status_path = safe_resolve(state.www_dir, 'pool/pool.status')
+            try:
+                pool = parse_pool_status_file(status_path) if status_path else None
+            except (OSError, ValueError):
+                pool = None
+            self.send_json(HTTPStatus.OK, build_pool_widget(pool))
+
+        def handle_widget_hashrate(self):
+            status_path = safe_resolve(state.www_dir, 'pool/pool.status')
+            try:
+                pool = parse_pool_status_file(status_path) if status_path else None
+            except (OSError, ValueError):
+                pool = None
+            self.send_json(HTTPStatus.OK, build_hashrate_widget(pool))
+
+        def handle_widget_workers(self):
+            users_dir = safe_resolve(state.www_dir, 'users')
+            try:
+                payload = build_workers_leaderboard_widget(users_dir)
+            except (OSError, ValueError):
+                payload = {
+                    'type': 'list',
+                    'refresh': WIDGET_REFRESH,
+                    'link': '',
+                    'items': [{'text': 'Pool unavailable', 'subtext': 'Waiting for worker statistics'}],
+                }
+            self.send_json(HTTPStatus.OK, payload)
 
         def handle_get_config(self):
             with state.config_lock:
@@ -529,6 +830,12 @@ def make_handler(state):
     return Handler
 
 
+class BassinHTTPServer(ThreadingHTTPServer):
+    daemon_threads = True
+    allow_reuse_address = True
+    request_queue_size = 32
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--host', default='0.0.0.0')
@@ -539,13 +846,16 @@ def main():
     parser.add_argument('--interval', type=int, default=900)
     args = parser.parse_args()
 
+    # Use a compact 256 KiB thread stack (vs 8 MiB default) to keep RAM usage minimal.
+    threading.stack_size(256 * 1024)
+
     state = AppState(args.ui_dir, args.www_dir, args.config, args.interval)
     state.refresh_sv2()
     worker = threading.Thread(target=state.background_loop, daemon=True)
     worker.start()
 
     # Internal container HTTP listener behind Umbrel's authenticating app_proxy.
-    server = ThreadingHTTPServer((args.host, args.port), make_handler(state))  # NOSONAR
+    server = BassinHTTPServer((args.host, args.port), make_handler(state))  # NOSONAR
     try:
         server.serve_forever()  # NOSONAR
     except KeyboardInterrupt:

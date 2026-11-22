@@ -169,6 +169,76 @@ class BassinServerTest(unittest.TestCase):
         status, _, _ = self.request('GET', '/pool/leak.conf')
         self.assertEqual(status, 404)
 
+    def test_builtin_umbrel_widgets_and_worker_leaderboard(self):
+        import time as _time
+        now = int(_time.time())
+        (self.www_dir / 'pool/pool.status').write_text(
+            '\n'.join([
+                json.dumps({'runtime': 3600, 'lastupdate': now - 10, 'Users': 2, 'Workers': 3, 'Idle': 0, 'Disconnected': 0}),
+                json.dumps({'hashrate1m': '1.61T', 'hashrate5m': '1e+03G', 'hashrate1hr': '950G', 'hashrate1d': '1.10T', 'hashrate7d': '410G'}),
+                json.dumps({'diff': 42, 'accepted': 66872638, 'rejected': 10, 'bestshare': 1.25e15, 'SPS1m': 1.5}),
+                json.dumps({'clients': 2, 'channels': 2, 'jdclients': 0}),
+            ]) + '\n',
+            encoding='utf-8',
+        )
+        (self.www_dir / 'users/bc1qminer1').write_text(
+            json.dumps({
+                'worker': [
+                    {'workername': 'bc1qminer1.gamma', 'hashrate5m': '1e+03G', 'bestshare': 146605934.08, 'bestever': 146605934},
+                    {'workername': 'bc1qminer1.ultra', 'hashrate5m': '555G', 'bestshare': 17426432, 'bestever': 17426432},
+                ]
+            }),
+            encoding='utf-8',
+        )
+        (self.www_dir / 'users/bc1qminer2').write_text(
+            json.dumps({
+                'worker': [
+                    {'workername': 'bc1qminer2.nerdqaxe', 'hashrate5m': '4.80T', 'bestshare': 500000, 'bestever': 2500000000000},
+                    {'workername': 'bc1qbareaddresswithnosuffix', 'hashrate5m': '0', 'bestshare': 0, 'bestever': 850000000},
+                ]
+            }),
+            encoding='utf-8',
+        )
+
+        status, _, body = self.request('GET', '/health')
+        self.assertEqual(status, 200)
+        self.assertEqual(json.loads(body), {'status': 'ok'})
+
+        status, _, body = self.request('GET', '/widgets/pool')
+        self.assertEqual(status, 200)
+        pool_w = json.loads(body)
+        self.assertEqual(pool_w['type'], 'four-stats')
+        self.assertEqual(pool_w['items'][0], {'title': 'Hashrate', 'text': '1.00', 'subtext': 'Th/s'})
+        self.assertEqual(pool_w['items'][1], {'title': 'Workers', 'text': '3'})
+        self.assertEqual(pool_w['items'][2], {'title': 'Best Share', 'text': '1.25', 'subtext': 'P'})
+
+        status, _, body = self.request('GET', '/widgets/hashrate')
+        self.assertEqual(status, 200)
+        hr_w = json.loads(body)
+        self.assertEqual(hr_w['items'][0], {'title': '1m Avg', 'text': '1.61', 'subtext': 'Th/s'})
+        self.assertEqual(hr_w['items'][1], {'title': '5m Avg', 'text': '1.00', 'subtext': 'Th/s'})
+
+        status, _, body = self.request('GET', '/widgets/workers')
+        self.assertEqual(status, 200)
+        lb = json.loads(body)
+        self.assertEqual(lb['type'], 'list')
+        self.assertEqual(lb['items'][0], {'text': '#1 nerdqaxe', 'subtext': 'Best ever: 2.5T · 4.80 Th/s'})
+        self.assertEqual(lb['items'][1], {'text': '#2 bc1qba…ffix', 'subtext': 'Best ever: 850M · Idle'})
+        self.assertEqual(lb['items'][2], {'text': '#3 gamma', 'subtext': 'Best ever: 147M · 1.00 Th/s'})
+        self.assertEqual(lb['items'][3], {'text': '#4 ultra', 'subtext': 'Best ever: 17.4M · 555 Gh/s'})
+
+        # Stale pool.status returns dashes instead of stale values.
+        (self.www_dir / 'pool/pool.status').write_text(
+            '\n'.join([
+                json.dumps({'runtime': 3600, 'lastupdate': now - 900, 'Users': 1, 'Workers': 1}),
+                json.dumps({'hashrate1m': '1T', 'hashrate5m': '1T', 'hashrate1hr': '1T', 'hashrate1d': '1T', 'hashrate7d': '1T'}),
+                json.dumps({'accepted': 100, 'rejected': 0, 'bestshare': 100}),
+            ]) + '\n',
+            encoding='utf-8',
+        )
+        status, _, body = self.request('GET', '/widgets/pool')
+        self.assertEqual(json.loads(body)['items'][0]['text'], '-')
+
 
 if __name__ == '__main__':
     unittest.main()
