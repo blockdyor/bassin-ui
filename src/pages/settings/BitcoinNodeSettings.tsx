@@ -134,7 +134,7 @@ export default function BitcoinNodeSettings({config, disabled, live = false, pas
 					<InputField
 						id='ipcmining'
 						disabled={disabled}
-						placeholder='/tmp/btc-mining.sock'
+						placeholder='/run/bitcoind/mining.sock'
 						value={typeof config.ipcmining === 'string' ? config.ipcmining : ''}
 						onChange={(e) => onChange('ipcmining', e.target.value.trim() || undefined)}
 					/>

@@ -99,8 +99,14 @@ class BassinServerTest(unittest.TestCase):
         self.assertEqual(status, 200)
         res_payload = json.loads(body)
         self.assertEqual(res_payload['passwordsSet'], [True])
-        self.assertNotIn('pass', res_payload['config']['btcd'][0])
-        self.assertEqual(res_payload['config']['sv2url'], ['0.0.0.0:3336'])
+        self.assertNotIn('config', res_payload)
+
+        get_status, get_headers, get_body = self.request('GET', '/api/config')
+        self.assertEqual(get_status, 200)
+        self.assertEqual(get_headers.get('X-Content-Type-Options'), 'nosniff')
+        get_payload = json.loads(get_body)
+        self.assertNotIn('pass', get_payload['config']['btcd'][0])
+        self.assertEqual(get_payload['config']['sv2url'], ['0.0.0.0:3336'])
 
         on_disk = json.loads(self.config_file.read_text(encoding='utf-8'))
         self.assertEqual(on_disk['btcd'][0]['pass'], 'super-secret-rpc-pass')

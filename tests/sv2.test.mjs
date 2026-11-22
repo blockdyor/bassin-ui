@@ -78,7 +78,7 @@ test('validateConfig supports Stratum V2, Job Declaration, and advanced CKPool o
 		maxsubclients: -1,
 		maxsendqueue: 1048576,
 		reconnect: false,
-		ipcmining: '/tmp/btc-mining.sock',
+		ipcmining: '/run/bitcoind/mining.sock',
 		serverurl: '0.0.0.0:3333',
 	}
 	assert.deepEqual(validateConfig(full), [])

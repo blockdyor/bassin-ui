@@ -335,6 +335,7 @@ def make_handler(state):
                 self.close_connection = True
             self.send_response(status)
             self.send_header('Content-Type', 'application/json')
+            self.send_header('X-Content-Type-Options', 'nosniff')
             self.send_header('Cache-Control', 'no-store')
             if close:
                 self.send_header('Connection', 'close')
@@ -347,6 +348,7 @@ def make_handler(state):
             body = message.encode('utf-8')
             self.send_response(status)
             self.send_header('Content-Type', 'text/plain; charset=utf-8')
+            self.send_header('X-Content-Type-Options', 'nosniff')
             self.send_header('Cache-Control', 'no-store')
             self.send_header('Content-Length', str(len(body)))
             self.end_headers()
@@ -409,8 +411,8 @@ def make_handler(state):
                 def reject_constant(token):
                     raise ValueError(f'Invalid JSON constant: {token}')
                 incoming = json.loads(raw.decode('utf-8'), parse_constant=reject_constant)
-            except (UnicodeDecodeError, ValueError) as exc:
-                self.send_json(HTTPStatus.BAD_REQUEST, {'error': f'Invalid JSON: {exc}'})
+            except (UnicodeDecodeError, ValueError):
+                self.send_json(HTTPStatus.BAD_REQUEST, {'error': 'Invalid JSON.'})
                 return
             if not isinstance(incoming, dict):
                 self.send_json(HTTPStatus.BAD_REQUEST, {'error': 'Configuration must be a JSON object.'})
@@ -430,13 +432,12 @@ def make_handler(state):
                 except OSError:
                     self.send_json(HTTPStatus.INTERNAL_SERVER_ERROR, {'error': 'Failed to save configuration.'})
                     return
-                masked, passwords_set = mask_config(merged)
+                _, passwords_set = mask_config(merged)
             state.refresh_sv2()
             state.refresh_event.set()
             self.send_json(HTTPStatus.OK, {
                 'live': True,
-                'config': masked,
-                'passwordsSet': passwords_set,
+                'passwordsSet': [bool(flag) for flag in passwords_set],
                 'savedAt': int(time.time() * 1000),
             })
 
@@ -451,6 +452,7 @@ def make_handler(state):
             body = ('<pre>\n' + '\n'.join(entries) + '\n</pre>\n').encode('utf-8')
             self.send_response(HTTPStatus.OK)
             self.send_header('Content-Type', 'text/html; charset=utf-8')
+            self.send_header('X-Content-Type-Options', 'nosniff')
             self.send_header('Cache-Control', 'no-store')
             self.send_header('Content-Length', str(len(body)))
             self.end_headers()
@@ -505,6 +507,7 @@ def make_handler(state):
                 length = 0 if total == 0 else (end - start + 1)
                 self.send_response(status)
                 self.send_header('Content-Type', ctype)
+                self.send_header('X-Content-Type-Options', 'nosniff')
                 self.send_header('Accept-Ranges', 'bytes')
                 if status == HTTPStatus.PARTIAL_CONTENT:
                     self.send_header('Content-Range', f'bytes {start}-{end}/{total}')
@@ -541,9 +544,10 @@ def main():
     worker = threading.Thread(target=state.background_loop, daemon=True)
     worker.start()
 
-    server = ThreadingHTTPServer((args.host, args.port), make_handler(state))
+    # Internal container HTTP listener behind Umbrel's authenticating app_proxy.
+    server = ThreadingHTTPServer((args.host, args.port), make_handler(state))  # NOSONAR
     try:
-        server.serve_forever()
+        server.serve_forever()  # NOSONAR
     except KeyboardInterrupt:
         pass
     finally:

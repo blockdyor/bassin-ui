@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict'
 import {spawn} from 'node:child_process'
+import {randomInt} from 'node:crypto'
 import {mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync} from 'node:fs'
 import {tmpdir} from 'node:os'
 import {join, resolve} from 'node:path'
@@ -46,9 +47,10 @@ writeFileSync(
 writeFileSync(join(wwwDir, 'pool/version.json'), JSON.stringify({software: 'ckpool', version: '1.2.0'}) + '\n')
 writeFileSync(join(wwwDir, 'ckpool.log'), '[2026-11-22 18:00:00.000] CKPool started\n')
 
-const port = 18080 + Math.floor(Math.random() * 1000)
+const port = randomInt(18080, 19080)
+const pythonBin = process.env.PYTHON || '/usr/bin/python3'
 const server = spawn(
-	'python3',
+	pythonBin,
 	[
 		resolve(repoRoot, 'scripts/bassin-server.py'),
 		'--host',

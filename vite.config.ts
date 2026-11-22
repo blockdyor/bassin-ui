@@ -25,7 +25,7 @@ function demoFiles(): Plugin {
 							jdEnabled: false,
 							sv2Urls: ['0.0.0.0:3336'],
 							sv2JdUrls: [],
-							authorityPubkey: '9auqWEzQGCt2s1Y8V7uV7K3t9xN4qP6mR2kL8wX5jH1cB3dE7fG',
+							authorityPubkey: '9' + 'a'.repeat(49),
 							ephemeralKeys: false,
 						}),
 					)
