@@ -10,6 +10,8 @@ import type {PoolLocation} from '@/helpers/location'
 const rendererConfig = {antialias: true, alpha: true}
 const hexColor = () => 'rgba(54, 84, 97, 0.8)'
 const ringColor = () => (t: number) => `rgba(83,203,234,${Math.max(0, 1 - t)})`
+const pointColor = () => '#53cbea'
+const pointLabel = () => 'Your Bitcoin node'
 type Props = {width?: number; height?: number; location?: PoolLocation | null}
 function ImageFallback({width = 650, height = 650}: Props) {
 	return (
@@ -148,10 +150,10 @@ function GlobeWebGL({width = 650, height = 650, location, onContextLost}: Props 
 				hexPolygonColor={hexColor}
 				hexPolygonAltitude={0.001}
 				pointsData={marker}
-				pointColor={() => '#53cbea'}
+				pointColor={pointColor}
 				pointRadius={0.85}
 				pointAltitude={0.008}
-				pointLabel={() => 'Your Bitcoin node'}
+				pointLabel={pointLabel}
 				ringsData={reduced ? [] : marker}
 				ringColor={ringColor}
 				ringAltitude={0.012}

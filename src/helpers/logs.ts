@@ -1,7 +1,16 @@
-import { safeFetch } from './fetch';
+import { fetchWithTimeout } from './fetch.ts';
 export const MAX_LOG_BYTES = 65536;
 export async function fetchLog(signal: AbortSignal): Promise<string> {
-  const response = await safeFetch('/ckpool.log', signal, { Range: `bytes=-${MAX_LOG_BYTES}` });
+  const response = await fetchWithTimeout('/ckpool.log', signal, { Range: `bytes=-${MAX_LOG_BYTES}` });
+  // RFC 9110 §14.1.2: suffix byte ranges against a 0-byte log return 416 with "bytes */0".
+  if (response.status === 416 && response.headers.get('content-range')?.trim() === 'bytes */0') {
+    await response.body?.cancel();
+    return '';
+  }
+  if (!response.ok) {
+    await response.body?.cancel();
+    throw new Error(`Request failed (${response.status})`);
+  }
   if (response.headers.get('content-type')?.includes('text/html')) { await response.body?.cancel(); throw new Error('The server returned a page instead of the CKPool log.'); }
   const length = Number(response.headers.get('content-length'));
   if (length > MAX_LOG_BYTES) { await response.body?.cancel(); throw new Error('The server must support HTTP byte ranges to read this large log.'); }

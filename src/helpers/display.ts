@@ -1,9 +1,11 @@
-import { abbreviateNumberPlain, parseHashrate } from './convert';
+import { abbreviateNumberPlain, parseHashrate } from './convert.ts';
 export function number(value: number | undefined): string {
   return value === undefined || !Number.isFinite(value) ? '—' : abbreviateNumberPlain(value);
 }
 export function hashrate(value: string | undefined): string {
-  return value === undefined ? '—' : number(parseHashrate(value)) + 'H/s';
+  if (value === undefined) return '—';
+  const parsed = parseHashrate(value);
+  return Number.isFinite(parsed) && parsed >= 0 ? number(parsed) + 'H/s' : '—';
 }
 export function duration(seconds: number): string {
   if (!Number.isFinite(seconds) || seconds < 0) return '—';

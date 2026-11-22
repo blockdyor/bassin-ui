@@ -17,6 +17,20 @@ function demoFiles(): Plugin {
 					res.end('null')
 					return
 				}
+				if (path === '/pool/sv2.json') {
+					res.setHeader('Content-Type', 'application/json')
+					res.end(
+						JSON.stringify({
+							enabled: true,
+							jdEnabled: false,
+							sv2Urls: ['0.0.0.0:3336'],
+							sv2JdUrls: [],
+							authorityPubkey: '9auqWEzQGCt2s1Y8V7uV7K3t9xN4qP6mR2kL8wX5jH1cB3dE7fG',
+							ephemeralKeys: false,
+						}),
+					)
+					return
+				}
 				const files: Record<string, string> = {
 					'/pool/pool.status': 'pool/pool.status',
 					'/users/users.status': 'users/users.status',

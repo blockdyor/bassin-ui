@@ -7,7 +7,7 @@ export default function PoolNotice() {
 			{error ? (
 				<>
 					Pool status unavailable. {pool ? 'Showing the last received data.' : 'Check Bassin and your Bitcoin node.'}{' '}
-					<button className='underline ml-2' onClick={refresh}>
+					<button type='button' className='underline ml-2' onClick={refresh}>
 						Retry
 					</button>
 				</>

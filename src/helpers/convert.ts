@@ -1,4 +1,4 @@
-import {utcTime} from './time'
+import {utcTime} from './time.ts'
 /**
  * A small piece of formatted output.
  * `sub: true` means "render this smaller, as a unit/suffix" (was previously a <span>).
@@ -10,7 +10,8 @@ export interface Segment {
 }
 
 export const parseHashrate = (value: string): number => {
-    if (!value) return 0;
+    const trimmed = value?.trim();
+    if (!trimmed) return Number.NaN;
 
     const units: { [key: string]: number } = {
         H: 1,
@@ -24,19 +25,24 @@ export const parseHashrate = (value: string): number => {
         Y: 1e24,
     };
 
-    const match = value.trim().match(/^([\d.,]+)\s*([KMGTPEZY]?)[H]?\b/i);
+    const match = trimmed.match(/^(\d+(?:[.,]\d+)?(?:e[+-]?\d+)?)\s*([KMGTPEZY]?)H?(?:\/s)?$/i);
 
     if (!match) return Number.NaN;
 
     const numericPart = Number.parseFloat(match[1].replace(',', '.'));
+    if (!Number.isFinite(numericPart)) return Number.NaN;
     const unit = match[2].toUpperCase();
     const multiplier = units[unit] || 1;
+    const result = numericPart * multiplier;
 
-    return numericPart * multiplier;
+    return Number.isFinite(result) ? result : Number.NaN;
 }
 
 export const abbreviateNumber = (value: number, symbolSuffix: string = ''): Segment[] => {
     const units = [
+        { limit: 1e24, symbol: 'Y' },
+        { limit: 1e21, symbol: 'Z' },
+        { limit: 1e18, symbol: 'E' },
         { limit: 1e15, symbol: 'P' },
         { limit: 1e12, symbol: 'T' },
         { limit: 1e9, symbol: 'G' },

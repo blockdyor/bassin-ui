@@ -12,19 +12,33 @@ import {GradientBorderFromTop} from '@/components/shared/GradientBorders'
 import FadeScrollArea from '@/components/shared/FadeScrollArea'
 import InfoDialog from '@/components/shared/InfoDialog'
 import {useConfig} from '@/hooks/ConfigContext'
-import {parseConfig, validateConfig, type Config} from '@/helpers/config'
+import {normalizeUrlList, parseConfig, validateConfig, type Config} from '@/helpers/config'
 import {download} from '@/helpers/display'
 import InputField from './InputField'
 import BitcoinNodeSettings from './BitcoinNodeSettings'
+import StratumV2Settings from './StratumV2Settings'
+import Toggle from './Toggle'
 import {BASSIN_GITHUB_URL} from '@/helpers/constants'
 import CKPoolLog from './CKPoolLog'
 const tabs = [
 	{value: 'mining', label: 'Mining'},
+	{value: 'sv2', label: 'Stratum V2'},
 	{value: 'node', label: 'Bitcoin Node'},
 	{value: 'advanced', label: 'Advanced'},
 	{value: 'logs', label: 'Logs'},
 ]
-const fields = [
+type FieldSpec = {
+	key: string
+	label: string
+	tab: 'mining' | 'advanced'
+	default: number | string
+	min?: number
+	max?: number
+	step?: number
+	unit?: string
+	description: string
+}
+const fields: FieldSpec[] = [
 	{
 		key: 'mindiff',
 		label: 'Minimum Difficulty',
@@ -42,6 +56,14 @@ const fields = [
 		description: 'The initial share difficulty given to a newly connected miner. Bassin’s template starts at 42.',
 	},
 	{
+		key: 'highdiff',
+		label: 'High Difficulty Floor',
+		tab: 'mining',
+		default: 0,
+		min: 0,
+		description: 'Optional minimum difficulty floor applied on high-difficulty Stratum listeners (0 disables).',
+	},
+	{
 		key: 'maxdiff',
 		label: 'Maximum Difficulty',
 		tab: 'mining',
@@ -55,6 +77,33 @@ const fields = [
 		tab: 'mining',
 		default: '',
 		description: 'Your message in the coinbase of blocks you find. Maximum 38 UTF-8 bytes.',
+	},
+	{
+		key: 'donation',
+		label: 'CKPool Developer Donation',
+		tab: 'mining',
+		default: 0,
+		min: 0,
+		max: 99.9,
+		step: 0.1,
+		unit: '%',
+		description: 'Optional percentage of a found block reward donated to the upstream CKPool developer (0 or 0.1–99.9%).',
+	},
+	{
+		key: 'version_mask',
+		label: 'Version Rolling Mask',
+		tab: 'mining',
+		default: '1fffe000',
+		description: 'Hex mask of BIP320/BIP323 version bits miners may roll. Set to 0 to disable Stratum V2 version rolling.',
+	},
+	{
+		key: 'dropidle',
+		label: 'Drop Idle Clients',
+		tab: 'mining',
+		default: 0,
+		min: 0,
+		unit: 'sec',
+		description: 'Disconnect miners after this many idle seconds. Set to 0 to keep idle miners connected.',
 	},
 	{
 		key: 'update_interval',
@@ -72,6 +121,59 @@ const fields = [
 		default: '/www',
 		description: 'Keep /www for the standard Bassin deployment so statistics and logs remain available.',
 	},
+	{
+		key: 'nonce1length',
+		label: 'Extranonce1 Length',
+		tab: 'advanced',
+		default: 4,
+		min: 2,
+		max: 8,
+		unit: 'bytes',
+		description: 'Length of Stratum extranonce1 in bytes (2 to 8).',
+	},
+	{
+		key: 'nonce2length',
+		label: 'Extranonce2 Length',
+		tab: 'advanced',
+		default: 8,
+		min: 2,
+		max: 8,
+		unit: 'bytes',
+		description: 'Length of Stratum extranonce2 in bytes (2 to 8).',
+	},
+	{
+		key: 'maxclients',
+		label: 'Maximum Clients',
+		tab: 'advanced',
+		default: 0,
+		min: 0,
+		description: 'Upper limit on simultaneous miner connections (0 for unlimited).',
+	},
+	{
+		key: 'maxusers',
+		label: 'Maximum Users',
+		tab: 'advanced',
+		default: 0,
+		min: 0,
+		description: 'Upper limit on distinct mining addresses tracked by the pool (0 for unlimited).',
+	},
+	{
+		key: 'maxsubclients',
+		label: 'Maximum Subclients',
+		tab: 'advanced',
+		default: 65536,
+		min: -1,
+		description: 'Maximum downstream subclients per passthrough/proxy parent (-1 disables the limit).',
+	},
+	{
+		key: 'maxsendqueue',
+		label: 'Maximum Send Queue',
+		tab: 'advanced',
+		default: 0,
+		min: 0,
+		unit: 'bytes',
+		description: 'Optional cap on queued outbound bytes per client before disconnecting slow readers (0 uses CKPool default).',
+	},
 ]
 export default function SettingsPage() {
 	const {raw, setRaw, baseline, setBaseline, source, setSource, dirty} = useConfig()
@@ -80,28 +182,51 @@ export default function SettingsPage() {
 	const [query, setQuery] = useState('')
 	const file = useRef<HTMLInputElement>(null)
 	let config: Config = {},
+		baselineConfig: Config = {},
 		parseError = ''
 	try {
 		config = parseConfig(raw)
 	} catch (e) {
 		parseError = e instanceof Error ? e.message : 'Invalid JSON'
 	}
+	try {
+		baselineConfig = parseConfig(baseline)
+	} catch {
+		baselineConfig = {}
+	}
 	const errors = parseError ? [parseError] : validateConfig(config)
-	function change(key: string, value: unknown) {
+	function patch(updates: Record<string, unknown>) {
 		const next = {...config}
-		if (value === undefined) delete next[key]
-		else next[key] = value
+		for (const [key, value] of Object.entries(updates)) {
+			if (value === undefined) delete next[key]
+			else next[key] = value
+		}
 		setRaw(JSON.stringify(next, null, 2))
+	}
+	function change(key: string, value: unknown) {
+		patch({[key]: value})
 	}
 	const search = query.trim().toLowerCase()
 	const shown = fields.filter((field) =>
-		search ? `${field.label} ${field.key}`.toLowerCase().includes(search) : field.tab === tab,
+		search ? `${field.label} ${field.key} ${field.description}`.toLowerCase().includes(search) : field.tab === tab,
 	)
+	const showSv2 = search
+		? search.split(/\s+/).every((word) =>
+				'stratum v2 sv2 sv2url sv2jdurl noise encryption job declaration jds authority static key keys persistent 3336 3337 3457 3458'.includes(
+					word,
+				),
+			)
+		: tab === 'sv2'
 	const showNode = search
 		? search.split(/\s+/).every((word) =>
-				'bitcoin core node rpc host port username password btcd auth pass zmq zmqblock hashblock notifications notify polling blockpoll interval'.includes(word),
+				'bitcoin core knots node rpc host port username password btcd auth pass zmq zmqblock hashblock notifications notify polling blockpoll interval ipc ipcmining socket'.includes(
+					word,
+				),
 			)
 		: tab === 'node'
+	const showAdvancedExtra = search
+		? search.split(/\s+/).every((word) => 'serverurl stratum v1 listeners bind port reconnect'.includes(word))
+		: tab === 'advanced'
 	function fieldRow(field: (typeof fields)[number]) {
 		const numeric = typeof field.default === 'number'
 		return (
@@ -110,21 +235,11 @@ export default function SettingsPage() {
 					<div>
 						<label htmlFor={`field-${field.key}`} className='text-[14px] font-normal text-white'>
 							{field.label}
-							{config[field.key] !== undefined &&
-								JSON.stringify(config[field.key]) !==
-									JSON.stringify(
-										(() => {
-											try {
-												return parseConfig(baseline)[field.key]
-											} catch {
-												return undefined
-											}
-										})(),
-									) && (
-									<span className='ml-2 text-[#76d9f5]' aria-label='Edited'>
-										•
-									</span>
-								)}
+							{!parseError && JSON.stringify(config[field.key]) !== JSON.stringify(baselineConfig[field.key]) && (
+								<span className='ml-2 text-[#76d9f5]' aria-label='Edited'>
+									•
+								</span>
+							)}
 						</label>
 						<div className='my-1'>
 							<span className='text-[12px] text-white/50 bg-[#26343d] px-1 rounded-sm'>{field.key}</span>
@@ -136,7 +251,8 @@ export default function SettingsPage() {
 						disabled={!!parseError}
 						type={numeric ? 'number' : 'text'}
 						min={numeric ? field.min : undefined}
-						step={numeric ? 1 : undefined}
+						max={numeric ? field.max : undefined}
+						step={numeric ? (field.step ?? 1) : undefined}
 						unit={field.unit}
 						placeholder={String(field.default)}
 						value={
@@ -144,9 +260,18 @@ export default function SettingsPage() {
 								? (config[field.key] as string | number)
 								: ''
 						}
-						onChange={(e) =>
-							change(field.key, e.target.value === '' ? undefined : numeric ? Number(e.target.value) : e.target.value)
-						}
+						onChange={(e) => {
+							if (e.target.value === '') {
+								change(field.key, undefined)
+								return
+							}
+							if (!numeric) {
+								change(field.key, e.target.value)
+								return
+							}
+							const parsed = Number(e.target.value)
+							if (Number.isFinite(parsed)) change(field.key, parsed)
+						}}
 					/>
 				</div>
 				<p className='text-[13px] text-white/60'>{field.description}</p>
@@ -230,11 +355,63 @@ export default function SettingsPage() {
 						className='h-[calc(100dvh-455px)] md:h-[calc(100dvh-390px)] min-h-[120px] [--fade-top:#101b22] [--fade-bottom:#080e12]'
 					>
 						<div className='pt-6 px-0.5 pb-6'>
-							{search && !shown.length && !showNode && (
+							{search && !shown.length && !showSv2 && !showNode && !showAdvancedExtra && (
 								<p className='text-center text-white/60 text-sm'>No results found for “{query}”</p>
 							)}
 							{shown.map(fieldRow)}
+							{showSv2 && (
+								<StratumV2Settings config={config} disabled={!!parseError} onChange={change} onPatch={patch} />
+							)}
 							{showNode && <BitcoinNodeSettings config={config} disabled={!!parseError} onChange={change} />}
+							{showAdvancedExtra && (
+								<div className='space-y-6 border-t border-white/20 pt-6 mb-6'>
+									<div className='flex flex-col gap-1 border-b border-white/20 pb-6'>
+										<div className='flex flex-row justify-between items-center gap-4'>
+											<div>
+												<label htmlFor='field-serverurl' className='text-[14px] font-normal text-white'>
+													Stratum V1 Listeners
+												</label>
+												<div className='my-1'>
+													<span className='text-[12px] text-white/50 bg-[#26343d] px-1 rounded-sm'>serverurl</span>
+												</div>
+											</div>
+											<InputField
+												id='field-serverurl'
+												className='max-w-[45%] sm:max-w-[240px]'
+												disabled={!!parseError}
+												placeholder='0.0.0.0:3333'
+												value={normalizeUrlList(config.serverurl).join(', ')}
+												onChange={(e) => {
+													const list = e.target.value
+														.split(/[,\n]/)
+														.map((part) => part.trim())
+														.filter(Boolean)
+													change('serverurl', list.length ? list : undefined)
+												}}
+											/>
+										</div>
+										<p className='text-[13px] text-white/60'>
+											Comma-separated host:port bindings for Stratum V1. Leaving blank binds all interfaces on port
+											3333.
+										</p>
+									</div>
+									<div className='flex justify-between items-center gap-4'>
+										<div>
+											<p className='text-[14px] text-white'>Allow Client Reconnect</p>
+											<span className='text-[12px] text-white/50 bg-[#26343d] px-1 rounded-sm'>reconnect</span>
+											<p className='text-[13px] text-white/60 mt-1'>
+												Allow Stratum V1 client.reconnect directives (enabled by default in CKPool).
+											</p>
+										</div>
+										<Toggle
+											name='Allow Client Reconnect'
+											checked={config.reconnect !== false}
+											disabled={!!parseError}
+											onToggle={(value) => change('reconnect', value ? undefined : false)}
+										/>
+									</div>
+								</div>
+							)}
 							{!search && (
 								<>
 									{tab === 'advanced' && (
