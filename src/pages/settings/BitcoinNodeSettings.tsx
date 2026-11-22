@@ -7,22 +7,29 @@ import Toggle from './Toggle'
 type Props = {
 	config: Config
 	disabled: boolean
+	live?: boolean
+	passwordsSet?: boolean[]
 	onChange: (key: string, value: unknown) => void
 }
 
-export default function BitcoinNodeSettings({config, disabled, onChange}: Props) {
+export default function BitcoinNodeSettings({config, disabled, live = false, passwordsSet, onChange}: Props) {
 	const [showPassword, setShowPassword] = useState(false)
 	const nodes = Array.isArray(config.btcd) ? config.btcd : []
 	const node = nodes[0] && typeof nodes[0] === 'object' ? nodes[0] : {}
+	const passwordSaved = passwordsSet?.[0] === true
 	const polling = node.notify !== true
 	const zmqError = zmqEndpointError(config.zmqblock)
 	return (
 		<div className='space-y-6'>
-			<h3 className='font-outfit text-lg'>Bitcoin Core connection</h3>
+			<h3 className='font-outfit text-lg'>Bitcoin node connection</h3>
 			{[
 				{key: 'url', label: 'RPC Host and Port', hint: 'host:8332'},
 				{key: 'auth', label: 'RPC Username', hint: 'Username'},
-				{key: 'pass', label: 'RPC Password', hint: 'Password'},
+				{
+					key: 'pass',
+					label: 'RPC Password',
+					hint: passwordSaved ? 'Saved on server (leave blank to keep)' : 'Password',
+				},
 			].map((field) => (
 				<div className='border-b border-white/20 pb-3' key={field.key}>
 					<div className='flex justify-between gap-4 items-center'>
@@ -70,7 +77,9 @@ export default function BitcoinNodeSettings({config, disabled, onChange}: Props)
 					/>
 					{zmqError && <p id='zmq-error' role='alert' className='text-xs text-amber-200 mb-3'>{zmqError}</p>}
 					<p id='zmq-default' className='text-[12px] text-white/50'>
-						Leaving this blank uses tcp://127.0.0.1:28332; it does not disable ZMQ. On Umbrel, import your existing configuration to keep the correct node address. Localhost refers to the pool container.
+						{live
+							? 'Leaving this blank uses tcp://127.0.0.1:28332 inside the pool container; it does not disable ZMQ. Keep the configured Umbrel node address unless connecting to an external node.'
+							: 'Leaving this blank uses tcp://127.0.0.1:28332; it does not disable ZMQ. On Umbrel, import your existing configuration to keep the correct node address. Localhost refers to the pool container.'}
 					</p>
 				</div>
 				<div className='border-t border-white/20 pt-5'>
@@ -120,7 +129,7 @@ export default function BitcoinNodeSettings({config, disabled, onChange}: Props)
 					</div>
 					<p className='text-[13px] text-white/60 mt-2 mb-3'>
 						Optional Unix socket path for Bitcoin Core v32.x <code className='font-mono'>-ipcbind</code>. Leave blank
-						to use standard JSON-RPC and ZMQ (fully compatible with Bitcoin Knots 29.3 and all Bitcoin Core versions).
+						to use standard JSON-RPC and ZMQ (compatible with both Bitcoin Core and Bitcoin Knots).
 					</p>
 					<InputField
 						id='ipcmining'

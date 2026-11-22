@@ -20,7 +20,7 @@ try {
     }
     await page.goto(base + '/#/settings?tab=node')
     await page.locator('input[type=file]').setInputFiles({name: 'ckpool.conf', mimeType: 'application/json', buffer: Buffer.from(JSON.stringify(original))})
-    await page.getByRole('heading', {name: 'Bitcoin Core connection'}).waitFor()
+    await page.getByRole('heading', {name: 'Bitcoin node connection'}).waitFor()
     assert.equal(await page.getByText('btcd[0].pass', {exact: true}).count(), 0)
     const toggle = page.getByRole('switch', {name: 'Poll for new blocks'})
     assert.equal(await toggle.getAttribute('aria-checked'), 'false')

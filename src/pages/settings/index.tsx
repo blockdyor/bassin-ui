@@ -2,7 +2,7 @@
 // internal FadeScrollArea, field hierarchy, inset inputs, and bottom actions.
 import {useRef, useState} from 'react'
 import {useSearchParams} from 'react-router-dom'
-import {Download, Search, Info, Github, ExternalLink} from 'lucide-react'
+import {CheckCircle2, Download, Search, Info, Github, ExternalLink, Loader2, AlertCircle} from 'lucide-react'
 import {toast} from 'sonner'
 import {Card, CardHeader, CardTitle, CardContent, CardFooter} from '@/components/ui/card'
 import {Tabs, TabsList, TabsTrigger} from '@/components/ui/tabs'
@@ -176,7 +176,8 @@ const fields: FieldSpec[] = [
 	},
 ]
 export default function SettingsPage() {
-	const {raw, setRaw, baseline, setBaseline, source, setSource, dirty} = useConfig()
+	const {raw, setRaw, baseline, setBaseline, source, setSource, dirty, live, passwordsSet, saveState, saveError, saveNow} =
+		useConfig()
 	const [params, setParams] = useSearchParams()
 	const tab = tabs.some((t) => t.value === params.get('tab')) ? params.get('tab')! : 'mining'
 	const [query, setQuery] = useState('')
@@ -194,7 +195,7 @@ export default function SettingsPage() {
 	} catch {
 		baselineConfig = {}
 	}
-	const errors = parseError ? [parseError] : validateConfig(config)
+	const errors = parseError ? [parseError] : validateConfig(config, {passwordsSet})
 	function patch(updates: Record<string, unknown>) {
 		const next = {...config}
 		for (const [key, value] of Object.entries(updates)) {
@@ -288,9 +289,11 @@ export default function SettingsPage() {
 		try {
 			const text = JSON.stringify(parseConfig(await selected.text()), null, 2)
 			setRaw(text)
-			setBaseline(text)
-			setSource(selected.name)
-			toast.success('Configuration imported')
+			if (!live) {
+				setBaseline(text)
+				setSource(selected.name)
+			}
+			toast.success(live ? 'Configuration imported — auto-saving if valid' : 'Configuration imported')
 		} catch (e) {
 			toast.error(`Could not import: ${e instanceof Error ? e.message : 'Invalid JSON'}`)
 		}
@@ -298,8 +301,12 @@ export default function SettingsPage() {
 	function exportFile() {
 		if (errors.length) return
 		download(JSON.stringify(config, null, 2) + '\n', 'ckpool.conf', 'application/json')
-		setBaseline(raw)
-		toast.success('Configuration downloaded. Apply the file and restart Bassin.')
+		if (!live) {
+			setBaseline(raw)
+			toast.success('Configuration downloaded. Apply the file and restart Bassin.')
+		} else {
+			toast.success('Backup downloaded. Saved RPC passwords remain on the server unless entered here.')
+		}
 	}
 	return (
 		<Card
@@ -314,7 +321,11 @@ export default function SettingsPage() {
 						<InfoDialog
 							trigger={<Info className='size-3 text-white/40' />}
 							title='Pool configuration'
-							description='Import your existing ckpool.conf, edit its options, and download the updated file. This static UI does not read or write the running configuration. Apply the downloaded file in your config volume and restart Bassin. Credentials stay in this browser tab until you download them.'
+							description={
+								live
+									? 'Connected directly to your running ckpool.conf. Valid changes save automatically and reload CKPool within seconds. Stored Bitcoin RPC passwords stay on the server and are never sent back to the browser.'
+									: 'Import your existing ckpool.conf, edit its options, and download the updated file. This static preview does not read or write a running configuration. Apply the downloaded file in your config volume and restart Bassin.'
+							}
 						/>
 					</CardTitle>
 					<div className='relative max-w-[50%] sm:max-w-xs mt-2'>
@@ -362,7 +373,15 @@ export default function SettingsPage() {
 							{showSv2 && (
 								<StratumV2Settings config={config} disabled={!!parseError} onChange={change} onPatch={patch} />
 							)}
-							{showNode && <BitcoinNodeSettings config={config} disabled={!!parseError} onChange={change} />}
+							{showNode && (
+								<BitcoinNodeSettings
+									config={config}
+									disabled={!!parseError}
+									live={live}
+									passwordsSet={passwordsSet}
+									onChange={change}
+								/>
+							)}
 							{showAdvancedExtra && (
 								<div className='space-y-6 border-t border-white/20 pt-6 mb-6'>
 									<div className='flex flex-col gap-1 border-b border-white/20 pb-6'>
@@ -435,13 +454,50 @@ export default function SettingsPage() {
 							)}
 							{(tab !== 'logs' || search) && (
 								<>
-									<p className='text-[11px] text-white/40 mt-5 break-all'>
-										Editing {source}
-										{dirty ? ' · Unexported changes' : ''}. Local configuration, not the running pool.
-									</p>
+									{live ? (
+										<div
+											data-testid='live-config-status'
+											role='status'
+											className='mt-5 flex flex-wrap items-center justify-between gap-2 rounded-lg bg-white/5 px-3 py-2 text-xs text-white/75'
+										>
+											<span className='flex items-center gap-2'>
+												{saveState === 'saving' || (dirty && errors.length === 0 && saveState !== 'error') ? (
+													<>
+														<Loader2 className='size-3.5 animate-spin text-[#76d9f5]' />
+														Saving changes and reloading CKPool…
+													</>
+												) : saveState === 'error' ? (
+													<>
+														<AlertCircle className='size-3.5 text-amber-300' />
+														<span className='text-amber-200'>{saveError || 'Failed to save changes.'}</span>
+													</>
+												) : saveState === 'saved' ? (
+													<>
+														<CheckCircle2 className='size-3.5 text-emerald-300' />
+														Saved · CKPool reloads automatically
+													</>
+												) : (
+													<>
+														<CheckCircle2 className='size-3.5 text-[#76d9f5]' />
+														Live · Changes auto-save and reload CKPool
+													</>
+												)}
+											</span>
+											{saveState === 'error' && errors.length === 0 && (
+												<Button type='button' size='sm' variant='secondary' onClick={saveNow}>
+													Retry save
+												</Button>
+											)}
+										</div>
+									) : (
+										<p className='text-[11px] text-white/40 mt-5 break-all'>
+											Editing {source}
+											{dirty ? ' · Unexported changes' : ''}. Local configuration, not the running pool.
+										</p>
+									)}
 									{errors.length > 0 && (
 										<div role='status' className='mt-4 rounded-lg bg-amber-400/10 p-3 text-xs text-amber-200'>
-											<strong>Before downloading</strong>
+											<strong>{live ? 'Before saving' : 'Before downloading'}</strong>
 											<ul className='list-disc pl-4 mt-2 space-y-1'>
 												{errors.map((error) => (
 													<li key={error}>{error}</li>

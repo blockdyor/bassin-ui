@@ -105,3 +105,14 @@ test('validateConfig supports Stratum V2, Job Declaration, and advanced CKPool o
 		assert.ok(validateConfig({...baseConfig, ...bad}).length > 0, JSON.stringify(bad))
 	}
 })
+
+test('validateConfig accepts omitted RPC password when stored server-side', () => {
+	const masked = {
+		...defaultConfig,
+		btcd: [{url: '10.21.21.7:9332', auth: 'umbrel', notify: true}],
+		sv2url: ['0.0.0.0:3336'],
+	}
+	assert.ok(validateConfig(masked).some((e) => e.includes('Bitcoin node 1')))
+	assert.deepEqual(validateConfig(masked, {passwordsSet: [true]}), [])
+	assert.ok(validateConfig(masked, {passwordsSet: [false]}).length > 0)
+})

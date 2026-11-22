@@ -36,7 +36,7 @@ export default function StratumV2Settings({config, disabled, onChange, onPatch}:
 				<h3 className='font-outfit text-lg'>Stratum V2 (Noise-encrypted)</h3>
 				<p className='text-[13px] text-white/60 mt-2'>
 					Enable encrypted Stratum V2 mining alongside Stratum V1. Solo SV2 mining works over standard JSON-RPC and ZMQ
-					with both Bitcoin Core and Bitcoin Knots 29.3+.
+					with both Bitcoin Core and Bitcoin Knots.
 				</p>
 			</div>
 

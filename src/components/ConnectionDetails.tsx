@@ -144,8 +144,8 @@ export default function ConnectionDetails() {
 						<TabsContent value='stratum-v2' className='mt-4 min-h-[310px] space-y-4'>
 							{sv2 && !sv2.enabled && (
 								<p role='status' className='text-xs text-amber-200 bg-amber-400/10 rounded-lg p-3'>
-									Stratum V2 is not enabled in the running <code className='font-mono'>ckpool.conf</code>. Enable it
-									in Settings → Stratum V2, export the config, and restart Bassin.
+									Stratum V2 is disabled. Toggle it on in Settings → Stratum V2 — changes save and reload CKPool
+									automatically.
 								</p>
 							)}
 							{sv2?.enabled && sv2.ephemeralKeys && (
@@ -183,7 +183,7 @@ export default function ConnectionDetails() {
 							</div>
 							<p className='text-white/60 text-[13px]'>
 								Noise-encrypted Stratum V2 requires the pool’s Base58Check authority public key in the URL path. Solo
-								SV2 mining works with both Bitcoin Core and Bitcoin Knots 29.3+ over RPC and ZMQ.
+								SV2 mining works with both Bitcoin Core and Bitcoin Knots over RPC and ZMQ.
 							</p>
 						</TabsContent>
 						<TabsContent value='worker' className='mt-4 min-h-[310px] space-y-4'>

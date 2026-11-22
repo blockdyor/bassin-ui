@@ -66,7 +66,11 @@ function validateUrlField(value: unknown, allowOptionalPort = false): boolean {
   return value.every(url => validHostPort(url, false, allowOptionalPort));
 }
 
-export function validateConfig(config: Config): string[] {
+export type ValidateConfigOptions = {
+  passwordsSet?: boolean[];
+};
+
+export function validateConfig(config: Config, options?: ValidateConfigOptions): string[] {
   const errors: string[] = [];
   const positive = ['mindiff', 'startdiff', 'blockpoll', 'update_interval'];
   for (const key of [...positive, 'maxdiff', 'highdiff', 'maxclients', 'maxusers', 'maxsendqueue', 'dropidle']) {
@@ -108,7 +112,8 @@ export function validateConfig(config: Config): string[] {
   if (config.sv2_static_key !== undefined && !validPathString(config.sv2_static_key)) errors.push('SV2 static key path must be a nonempty path.');
   if (!Array.isArray(config.btcd) || config.btcd.length === 0) errors.push('Add at least one Bitcoin RPC node.');
   else config.btcd.forEach((node, i) => {
-    if (!node || typeof node !== 'object' || Array.isArray(node) || !validHostPort(node.url, true) || typeof node.auth !== 'string' || !node.auth.trim() || typeof node.pass !== 'string' || !node.pass) errors.push(`Bitcoin node ${i + 1} needs a host:port, RPC username, and RPC password.`);
+    const hasPassword = (typeof node?.pass === 'string' && node.pass.length > 0) || options?.passwordsSet?.[i] === true;
+    if (!node || typeof node !== 'object' || Array.isArray(node) || !validHostPort(node.url, true) || typeof node.auth !== 'string' || !node.auth.trim() || !hasPassword) errors.push(`Bitcoin node ${i + 1} needs a host:port, RPC username, and RPC password.`);
     if (node && typeof node === 'object' && !Array.isArray(node) && node.notify !== undefined && typeof node.notify !== 'boolean') errors.push(`Bitcoin node ${i + 1}: notify must be true or false.`);
   });
   return errors;
