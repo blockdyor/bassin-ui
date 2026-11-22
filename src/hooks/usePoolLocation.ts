@@ -1,3 +1,4 @@
+import {useMemo} from 'react'
 import {useQuery} from '@tanstack/react-query'
 import {parsePoolLocation} from '@/helpers/location'
 export function usePoolLocation() {
@@ -16,5 +17,6 @@ export function usePoolLocation() {
 		refetchInterval: 30 * 60 * 1000,
 		retry: false,
 	})
-	return {...query, data: parsePoolLocation(query.data)}
+	const data = useMemo(() => parsePoolLocation(query.data), [query.data])
+	return {...query, data}
 }

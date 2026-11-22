@@ -99,7 +99,14 @@ export default function BitcoinNodeSettings({config, disabled, onChange}: Props)
 							disabled={disabled}
 							type='number' min={1} step={1} unit='ms' placeholder='100'
 							value={typeof config.blockpoll === 'number' ? config.blockpoll : ''}
-							onChange={(e) => onChange('blockpoll', e.target.value === '' ? undefined : Number(e.target.value))}
+							onChange={(e) => {
+								if (e.target.value === '') {
+									onChange('blockpoll', undefined)
+									return
+								}
+								const parsed = Number(e.target.value)
+								if (Number.isFinite(parsed)) onChange('blockpoll', parsed)
+							}}
 						/>
 					</div>
 					<p className='text-[12px] text-white/50'>

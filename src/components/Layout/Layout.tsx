@@ -1,4 +1,3 @@
-// @ts-nocheck
 import {Outlet, useLocation} from 'react-router-dom'
 import {useEffect, useRef, useState} from 'react'
 import {motion, useScroll, useTransform} from 'framer-motion'
@@ -55,9 +54,9 @@ export function Layout() {
 				<Dock className='fixed bottom-4 left-1/2 -translate-x-1/2 z-30' />
 
 				{/* Header at the very top */}
-				<header className='relative z-20 shrink-0 flex justify-center'>
+				<div className='relative z-20 shrink-0 flex justify-center'>
 					<Header className='w-full max-w-screen-md' />
-				</header>
+				</div>
 
 				{/* Main content below the header */}
 				{/* The outer scroll container is the full width of the viewport so that scrolling can be triggered outside of the inner floating column */}

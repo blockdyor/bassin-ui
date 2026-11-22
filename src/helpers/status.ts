@@ -1,6 +1,8 @@
 import type { Pool } from '../interfaces/pool';
 import type { User } from '../interfaces/users';
 
+const HASHRATE_PATTERN = /^\d+(?:\.\d+)?(?:e[+-]?\d+)?\s*[KMGTPEZY]?H?(?:\/s)?$/i;
+
 export function parsePoolStatus(text: string): Pool {
   const lines = text.trim().split('\n').filter(line => line.trim());
   if (lines.length < 3) throw new Error('Incomplete CKPool status');
@@ -11,7 +13,7 @@ export function parsePoolStatus(text: string): Pool {
     if (typeof pool[key] !== 'number' || !Number.isFinite(pool[key]) || pool[key] < 0) throw new Error(`Invalid pool field: ${key}`);
   }
   for (const key of ['hashrate1m', 'hashrate5m', 'hashrate1hr', 'hashrate1d', 'hashrate7d']) {
-    if (typeof pool[key] !== 'string' || !/^\d+(?:\.\d+)?\s*[KMGTPEZY]?H?(?:\/s)?$/i.test(pool[key])) throw new Error(`Invalid pool field: ${key}`);
+    if (typeof pool[key] !== 'string' || !HASHRATE_PATTERN.test(pool[key].trim())) throw new Error(`Invalid pool field: ${key}`);
   }
   return pool as Pool;
 }
@@ -27,7 +29,7 @@ export function parseUser(data: unknown, username: string): User {
     }
     if (worker.lastshare > 8640000000000) throw new Error('Worker timestamp out of range');
     for (const key of ['hashrate5m', 'hashrate1hr', 'hashrate1d', 'hashrate7d']) {
-      if (typeof worker[key] !== 'string' || !/^\d+(?:\.\d+)?\s*[KMGTPEZY]?H?(?:\/s)?$/i.test(worker[key])) throw new Error(`Invalid worker field: ${key}`);
+      if (typeof worker[key] !== 'string' || !HASHRATE_PATTERN.test(worker[key].trim())) throw new Error(`Invalid worker field: ${key}`);
     }
   }
   return { ...data, username } as User;

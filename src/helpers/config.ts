@@ -25,6 +25,21 @@ export function zmqEndpointError(value: unknown): string | undefined {
   }
 }
 
+function validHostPort(value: unknown, allowHttpScheme = false): boolean {
+  if (typeof value !== 'string') return false;
+  const target = allowHttpScheme ? value.replace(/^https?:\/\//i, '') : value;
+  const match = /^(\[[^\]]+\]|[a-zA-Z0-9_-]+(?:\.[a-zA-Z0-9_-]+)*\.?):(\d+)$/.exec(target);
+  if (!match) return false;
+  const port = Number(match[2]);
+  if (!Number.isSafeInteger(port) || port < 1 || port > 65535) return false;
+  try {
+    new URL(`http://${match[1]}:${port}`);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 export function validateConfig(config: Config): string[] {
   const errors: string[] = [];
   const positive = ['mindiff', 'startdiff', 'blockpoll', 'update_interval'];
@@ -41,11 +56,11 @@ export function validateConfig(config: Config): string[] {
   if (config.logdir !== undefined && (typeof config.logdir !== 'string' || !config.logdir.trim())) errors.push('Log directory must be a nonempty path.');
   const zmqError = zmqEndpointError(config.zmqblock);
   if (zmqError) errors.push(`ZMQ endpoint: ${zmqError}`);
-  if (config.serverurl !== undefined && (!Array.isArray(config.serverurl) || !config.serverurl.length || config.serverurl.some(url => typeof url !== 'string' || !/^.+:\d+$/.test(url)))) errors.push('Stratum listeners must be an array of host:port strings.');
+  if (config.serverurl !== undefined && (!Array.isArray(config.serverurl) || !config.serverurl.length || config.serverurl.some(url => !validHostPort(url)))) errors.push('Stratum listeners must be an array of host:port strings.');
   if (!Array.isArray(config.btcd) || config.btcd.length === 0) errors.push('Add at least one Bitcoin RPC node.');
   else config.btcd.forEach((node, i) => {
-    if (!node || typeof node !== 'object' || typeof node.url !== 'string' || !/^.+:\d+$/.test(node.url) || typeof node.auth !== 'string' || !node.auth.trim() || typeof node.pass !== 'string' || !node.pass) errors.push(`Bitcoin node ${i + 1} needs a host:port, RPC username, and RPC password.`);
-    if (node && typeof node === 'object' && node.notify !== undefined && typeof node.notify !== 'boolean') errors.push(`Bitcoin node ${i + 1}: notify must be true or false.`);
+    if (!node || typeof node !== 'object' || Array.isArray(node) || !validHostPort(node.url, true) || typeof node.auth !== 'string' || !node.auth.trim() || typeof node.pass !== 'string' || !node.pass) errors.push(`Bitcoin node ${i + 1} needs a host:port, RPC username, and RPC password.`);
+    if (node && typeof node === 'object' && !Array.isArray(node) && node.notify !== undefined && typeof node.notify !== 'boolean') errors.push(`Bitcoin node ${i + 1}: notify must be true or false.`);
   });
   return errors;
 }

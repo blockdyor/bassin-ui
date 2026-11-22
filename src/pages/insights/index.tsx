@@ -1,5 +1,5 @@
 // Uses upstream Insights card, stat-summary grid, chart defaults, and table styling.
-import {useState} from 'react'
+import {useEffect, useState} from 'react'
 import {Info, Search} from 'lucide-react'
 import {Area, AreaChart, CartesianGrid, XAxis, YAxis, ResponsiveContainer, Tooltip} from 'recharts'
 import {CardHeader, CardTitle, CardContent} from '@/components/ui/card'
@@ -31,19 +31,30 @@ function Stat({label, value, description}: {label: string; value: string | numbe
 		</div>
 	)
 }
+function workerDisplayName(workername: string): string {
+	const dot = workername.indexOf('.')
+	if (dot === -1) return workername
+	return workername.slice(dot + 1) || workername
+}
 export default function InsightsPage() {
-	const {pool, users, chart, usersError, loading, now} = usePoolData()
+	const {pool, users, chart, usersError, loading} = usePoolData()
+	const [now, setNow] = useState(Date.now())
 	const [query, setQuery] = useState('')
 	const [sort, setSort] = useState('hashrate')
+	useEffect(() => {
+		const timer = setInterval(() => setNow(Date.now()), 1000)
+		return () => clearInterval(timer)
+	}, [])
 	const workers = users
 		.flatMap((user) => user.worker.map((worker) => ({...worker, address: user.username})))
 		.filter((worker) => `${worker.workername} ${worker.address}`.toLowerCase().includes(query.toLowerCase()))
 		.sort((a, b) =>
 			sort === 'name'
-				? a.workername.localeCompare(b.workername)
+				? workerDisplayName(a.workername).localeCompare(workerDisplayName(b.workername)) ||
+					a.address.localeCompare(b.address)
 				: sort === 'best'
 					? b.bestshare - a.bestshare
-					: parseHashrate(b.hashrate5m) - parseHashrate(a.hashrate5m),
+					: (parseHashrate(b.hashrate5m) || 0) - (parseHashrate(a.hashrate5m) || 0),
 		)
 	return (
 		<div className='flex flex-col gap-10 pb-26'>
@@ -229,9 +240,7 @@ export default function InsightsPage() {
 										>
 											<th scope='row' className='font-normal py-4 pr-3'>
 												<span className='block max-w-40 truncate' title={worker.workername}>
-													{worker.workername.includes('.')
-														? worker.workername.slice(worker.workername.indexOf('.') + 1)
-														: worker.workername}
+													{workerDisplayName(worker.workername)}
 												</span>
 												<span className='block text-[10px] text-white/30 max-w-32 truncate' title={worker.address}>
 													{worker.address}

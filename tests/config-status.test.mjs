@@ -6,11 +6,13 @@ import { parsePoolStatus, parseUserList, parseUser } from '../src/helpers/status
 const fixture = readFileSync(new URL('../src/demodata/pool/pool.status', import.meta.url), 'utf8');
 const config = { ...defaultConfig, btcd: [{ url: 'node:8332', auth: 'test', pass: 'test-only', notify: true }] };
 
-test('CKPool status combines records and keeps zeros', () => {
+test('CKPool status combines records, keeps zeros, and accepts scientific-notation hashrates', () => {
   const pool = parsePoolStatus(fixture);
   assert.equal(pool.hashrate5m, '1.84T');
   assert.equal(pool.Workers, 2);
   assert.equal(parsePoolStatus(fixture.replace('"Workers": 2', '"Workers": 0')).Workers, 0);
+  // CKPool suffix_string uses "%.3g" which formats values in [999.5, 1000) as "1e+03<unit>".
+  assert.equal(parsePoolStatus(fixture.replace('"hashrate5m": "1.84T"', '"hashrate5m": "1e+03G"')).hashrate5m, '1e+03G');
 });
 test('invalid or incomplete status never becomes a live pool', () => {
   for (const text of ['<html>error</html>', '{}\n{}', '{}\n{}\n{}', fixture.replace('"runtime": 89405', '"runtime": "89405"'), fixture.replace('"hashrate5m": "1.84T"', '"hashrate5m": "oops"')]) assert.throws(() => parsePoolStatus(text));
@@ -33,10 +35,18 @@ test('import/export preserves credentials, additional nodes, and unknown options
   assert.deepEqual(output.custom_option, original.custom_option);
   assert.deepEqual(validateConfig(output), []);
 });
-test('config rejects malformed roots and missing node credentials', () => {
+test('config rejects malformed roots, invalid ports, and missing node credentials', () => {
   for (const raw of ['[]', 'null', 'true', '"text"']) assert.throws(() => parseConfig(raw));
   assert.ok(validateConfig(defaultConfig).length);
   assert.ok(validateConfig({ ...config, btcd: [null] }).length);
+  for (const url of [' :8332', 'node:0', 'node:65536', 'node:8332 ', 'http://node:0']) {
+    assert.ok(validateConfig({ ...config, btcd: [{ url, auth: 'test', pass: 'test-only' }] }).length, url);
+  }
+  for (const url of ['node:8332', 'https://node.example:8332', '[::1]:8332']) {
+    assert.deepEqual(validateConfig({ ...config, btcd: [{ url, auth: 'test', pass: 'test-only' }] }), [], url);
+  }
+  assert.ok(validateConfig({ ...config, serverurl: ['0.0.0.0:0'] }).length);
+  assert.deepEqual(validateConfig({ ...config, serverurl: ['0.0.0.0:3333', '[::]:3333'] }), []);
 });
 test('difficulty limits enforce integer values, minimum, start, and maximum', () => {
   assert.deepEqual(validateConfig(config), []);

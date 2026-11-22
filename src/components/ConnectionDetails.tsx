@@ -1,5 +1,5 @@
 // Adapted from Umbrel Bitcoin's ConnectionDetails: retain dialog, tabs, QR card, fields, and copy controls.
-import {useState} from 'react'
+import {useEffect, useRef, useState} from 'react'
 import QrSvg from '@wojtekmaj/react-qr-svg'
 import copy from 'copy-to-clipboard'
 import {Copy, Plug, X} from 'lucide-react'
@@ -22,10 +22,15 @@ import {BASSIN_STRATUM_PORT} from '@/helpers/constants'
 
 function Field({label, value}: {label: string; value: string}) {
 	const [open, setOpen] = useState(false)
+	const timer = useRef<ReturnType<typeof setTimeout> | null>(null)
+	useEffect(() => () => {
+		if (timer.current !== null) clearTimeout(timer.current)
+	}, [])
 	function handleCopy() {
 		if (copy(value)) {
 			setOpen(true)
-			setTimeout(() => setOpen(false), 800)
+			if (timer.current !== null) clearTimeout(timer.current)
+			timer.current = setTimeout(() => setOpen(false), 800)
 		} else toast.error('Copy unavailable. Select and copy the value manually.')
 	}
 	return (

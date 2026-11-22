@@ -96,7 +96,7 @@ def lookup(ip):
     if not public_ip(ip):
         return None
     url = 'https://ipwho.is/' + quote(ip, safe=':') + '?fields=ip,success,latitude,longitude'
-    with urlopen(Request(url, headers={'User-Agent':'Bassin-location/2.1.9'}), timeout=10) as response:
+    with urlopen(Request(url, headers={'User-Agent':'Bassin-location/2.1.13'}), timeout=10) as response:
         data = json.loads(response.read(65536))
     lat, lon = data.get('latitude'), data.get('longitude')
     if data.get('success') is not True or public_ip(data.get('ip')) != ip:
@@ -117,8 +117,12 @@ def resolve(config, previous=None, rpc_call=rpc, geolocate=lookup):
                 ip = node_ip(info, rpc_call(node, 'getpeerinfo'))
             if not ip:
                 continue
+            updated_at = previous.get('updatedAt') if isinstance(previous, dict) else None
             if (isinstance(previous, dict) and previous.get('source') == 'bitcoin-node'
-                    and previous.get('ip') == ip and 0 <= time.time()*1000-previous.get('updatedAt', 0) < 6*3600000):
+                    and previous.get('ip') == ip
+                    and isinstance(updated_at, (int, float)) and not isinstance(updated_at, bool)
+                    and math.isfinite(updated_at)
+                    and 0 <= time.time()*1000 - updated_at < 6*3600000):
                 return previous
             return geolocate(ip)
         except Exception:

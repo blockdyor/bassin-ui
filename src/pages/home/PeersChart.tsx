@@ -45,18 +45,19 @@ export default function PeersChart() {
 	// If total share difficulty is 0 we show a placeholder slice so the donut chart shows up.
 	const displayData = totalDifficulty === 0 ? [{network: 'placeholder', total: 1, color: 'hsl(0 0% 20%)'}] : chartData
 
-	// Disable donut slice interactions when showing placeholder (legend is still interactive)
+	// Disable donut slice and legend hover interactions when showing placeholder
 	const isInteractive = totalDifficulty > 0
+	const activeSlice = isInteractive ? activeIndex : null
 
 	// Get the display value and label for the center text
 	const centerValue =
-		activeIndex !== null
-			? number(chartData[activeIndex]?.total)
+		activeSlice !== null
+			? number(chartData[activeSlice]?.total)
 			: totalDifficulty
 				? `${((pool!.accepted / totalDifficulty) * 100).toFixed(2)}%`
 				: '—'
 	const centerLabel =
-		activeIndex !== null ? chartConfig[chartData[activeIndex]?.network as keyof typeof chartConfig]?.label : 'Accepted'
+		activeSlice !== null ? chartConfig[chartData[activeSlice]?.network as keyof typeof chartConfig]?.label : 'Accepted'
 
 	/* helper for glow on legend items */
 	const glowStyle = (color: string) => ({
@@ -111,7 +112,7 @@ export default function PeersChart() {
 												dominantBaseline='middle'
 												className='font-outfit fill-white text-[16px] font-[400]'
 											>
-												{centerValue.toLocaleString()}
+												{centerValue}
 											</text>
 											{centerLabel && (
 												<text
@@ -137,12 +138,12 @@ export default function PeersChart() {
 				<ul className='flex flex-col items-center gap-2 text-[12px]'>
 					{chartData.map((data, index) => {
 						const config = chartConfig[data.network as keyof typeof chartConfig]
-						const hovered = index === activeIndex
+						const hovered = index === activeSlice
 						return (
 							<li
 								key={data.network}
-								onMouseEnter={() => setActiveIndex(index)}
-								onMouseLeave={() => setActiveIndex(null)}
+								onMouseEnter={isInteractive ? () => setActiveIndex(index) : undefined}
+								onMouseLeave={isInteractive ? () => setActiveIndex(null) : undefined}
 								className='flex w-full max-w-[10rem] justify-between items-center gap-2 md:gap-4 whitespace-nowrap cursor-pointer select-none'
 								style={hovered ? glowStyle(config.color) : undefined}
 							>
@@ -150,7 +151,7 @@ export default function PeersChart() {
 									<span className='h-3 w-3 rounded-sm border border-white/20' style={{background: config.color}} />
 									<span className='capitalize text-white/60'>{config.label}</span>
 								</span>
-								<span className='text-white/40'>{number(data.total)}</span>
+								<span className='text-white/40'>{pool ? number(data.total) : '—'}</span>
 							</li>
 						)
 					})}

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { fetchPool, fetchUsers } from '../helpers/fetch';
 import { Pool } from '../interfaces/pool';
 import { User } from '../interfaces/users';
@@ -12,7 +12,7 @@ export function usePool() {
   const [error, setError] = useState(false);
   const [usersError, setUsersError] = useState(false);
   const [loading, setLoading] = useState(true);
-  const [now, setNow] = useState(Date.now());
+  const [stale, setStale] = useState(false);
   const [updated, setUpdated] = useState<number | null>(null);
   const [attempt, setAttempt] = useState(0);
   const generation = useRef(0);
@@ -45,6 +45,22 @@ export function usePool() {
     void poll();
     return () => { controller.abort(); clearTimeout(timer); };
   }, [attempt]);
-  useEffect(() => { const timer = setInterval(() => setNow(Date.now()), 1000); return () => clearInterval(timer); }, []);
-  return { pool, users, chart, error, usersError, loading, updated, now, refresh, stale: !!pool && now / 1000 - pool.lastupdate > POLL_INTERVAL_SECONDS * 3 };
+  useEffect(() => {
+    if (!pool) {
+      setStale(false);
+      return;
+    }
+    const remaining = (pool.lastupdate + POLL_INTERVAL_SECONDS * 3) * 1000 - Date.now();
+    if (remaining <= 0) {
+      setStale(true);
+      return;
+    }
+    setStale(false);
+    const timer = setTimeout(() => setStale(true), remaining);
+    return () => clearTimeout(timer);
+  }, [pool]);
+  return useMemo(
+    () => ({ pool, users, chart, error, usersError, loading, updated, refresh, stale }),
+    [pool, users, chart, error, usersError, loading, updated, refresh, stale],
+  );
 }

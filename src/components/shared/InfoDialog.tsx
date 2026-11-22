@@ -27,7 +27,11 @@ export default function InfoDialog({trigger, title, description, className}: Inf
 				showCloseButton={false}
 			>
 				<DialogClose asChild>
-					<button className='absolute top-4 right-4 w-6 h-6 rounded-full bg-white/10 hover:bg-white/20 flex items-center justify-center transition-colors'>
+					<button
+						type='button'
+						aria-label='Close dialog'
+						className='absolute top-4 right-4 w-6 h-6 rounded-full bg-white/10 hover:bg-white/20 flex items-center justify-center transition-colors'
+					>
 						<XIcon className='w-3 h-3 text-white/70' />
 					</button>
 				</DialogClose>

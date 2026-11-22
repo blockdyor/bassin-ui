@@ -80,11 +80,17 @@ export default function SettingsPage() {
 	const [query, setQuery] = useState('')
 	const file = useRef<HTMLInputElement>(null)
 	let config: Config = {},
+		baselineConfig: Config = {},
 		parseError = ''
 	try {
 		config = parseConfig(raw)
 	} catch (e) {
 		parseError = e instanceof Error ? e.message : 'Invalid JSON'
+	}
+	try {
+		baselineConfig = parseConfig(baseline)
+	} catch {
+		baselineConfig = {}
 	}
 	const errors = parseError ? [parseError] : validateConfig(config)
 	function change(key: string, value: unknown) {
@@ -110,21 +116,11 @@ export default function SettingsPage() {
 					<div>
 						<label htmlFor={`field-${field.key}`} className='text-[14px] font-normal text-white'>
 							{field.label}
-							{config[field.key] !== undefined &&
-								JSON.stringify(config[field.key]) !==
-									JSON.stringify(
-										(() => {
-											try {
-												return parseConfig(baseline)[field.key]
-											} catch {
-												return undefined
-											}
-										})(),
-									) && (
-									<span className='ml-2 text-[#76d9f5]' aria-label='Edited'>
-										•
-									</span>
-								)}
+							{!parseError && JSON.stringify(config[field.key]) !== JSON.stringify(baselineConfig[field.key]) && (
+								<span className='ml-2 text-[#76d9f5]' aria-label='Edited'>
+									•
+								</span>
+							)}
 						</label>
 						<div className='my-1'>
 							<span className='text-[12px] text-white/50 bg-[#26343d] px-1 rounded-sm'>{field.key}</span>
@@ -144,9 +140,18 @@ export default function SettingsPage() {
 								? (config[field.key] as string | number)
 								: ''
 						}
-						onChange={(e) =>
-							change(field.key, e.target.value === '' ? undefined : numeric ? Number(e.target.value) : e.target.value)
-						}
+						onChange={(e) => {
+							if (e.target.value === '') {
+								change(field.key, undefined)
+								return
+							}
+							if (!numeric) {
+								change(field.key, e.target.value)
+								return
+							}
+							const parsed = Number(e.target.value)
+							if (Number.isFinite(parsed)) change(field.key, parsed)
+						}}
 					/>
 				</div>
 				<p className='text-[13px] text-white/60'>{field.description}</p>

@@ -68,7 +68,7 @@ try {
 		await page.locator('[data-testid=pool-globe] canvas').waitFor()
 		await page.waitForTimeout(10000)
 		assert.equal(await page.getByTestId('pool-globe').getAttribute('data-marker-count'), '1')
-		assert.equal(await page.locator('header p').textContent(), 'Bassin v2.1.12 · CKPool v1.2.0')
+		assert.equal(await page.locator('header p').textContent(), 'Bassin v2.1.13 · CKPool v1.2.0')
 		const width = devices[device].viewport.width
 		for (const viewport of [
 			devices[device].viewport,

@@ -39,6 +39,13 @@ class PoolLocationTest(unittest.TestCase):
         self.assertEqual(calls,[])
         m.resolve({'btcd':[{}]},rpc_call=rpc,geolocate=lambda ip:calls.append(ip))
         self.assertEqual(calls,['8.8.8.8'])
+        # Malformed cached updatedAt must fall back to geolocation rather than skipping the node.
+        for bad in [{'source':'bitcoin-node','ip':'8.8.8.8','updatedAt':'invalid'},
+                    {'source':'bitcoin-node','ip':'8.8.8.8','updatedAt':True},
+                    {'source':'bitcoin-node','ip':'8.8.8.8','updatedAt':None}]:
+            calls.clear()
+            m.resolve({'btcd':[{}]},bad,rpc_call=rpc,geolocate=lambda ip:calls.append(ip) or {'source':'bitcoin-node','ip':ip})
+            self.assertEqual(calls,['8.8.8.8'])
 
     def test_explicit_ip_lookup_and_response_identity(self):
         class Response:
