@@ -20,6 +20,9 @@ from urllib.request import Request, urlopen
 
 CONFIG = Path('/config/ckpool.conf')
 OUTPUT = Path('/www/pool/location.json')
+SV2_PUBKEY_RE = re.compile(
+    r'SV2 authority URL path \(stratum2\+tcp://<host>:<port>/([1-9A-HJ-NP-Za-km-z]{32,80})\)(\s+\[new/ephemeral material\])?'
+)
 
 def private_rpc(address):
     ip = ipaddress.ip_address(address)
@@ -96,7 +99,7 @@ def lookup(ip):
     if not public_ip(ip):
         return None
     url = 'https://ipwho.is/' + quote(ip, safe=':') + '?fields=ip,success,latitude,longitude'
-    with urlopen(Request(url, headers={'User-Agent':'Bassin-location/2.1.13'}), timeout=10) as response:
+    with urlopen(Request(url, headers={'User-Agent':'Bassin-location/2.1.14'}), timeout=10) as response:
         data = json.loads(response.read(65536))
     lat, lon = data.get('latitude'), data.get('longitude')
     if data.get('success') is not True or public_ip(data.get('ip')) != ip:
@@ -181,16 +184,78 @@ def publish(path, value):
             raise
 
 
+def normalize_urls(value):
+    if isinstance(value, str):
+        cleaned = value.strip()
+        return [cleaned] if cleaned else []
+    if isinstance(value, list):
+        return [item.strip() for item in value if isinstance(item, str) and item.strip()]
+    return []
+
+
+def extract_sv2_pubkey(log_path):
+    """Scan the public CKPool log in bounded chunks for the latest SV2 authority pubkey."""
+    pubkey = None
+    ephemeral = False
+    try:
+        with parent_directory(log_path) as directory:
+            fd = os.open(local_name(os.path.basename(log_path)), os.O_RDONLY | os.O_NOFOLLOW, dir_fd=directory)
+            with os.fdopen(fd, 'rb') as file:
+                tail = ''
+                while True:
+                    chunk = file.read(65536)
+                    if not chunk:
+                        break
+                    text = tail + chunk.decode('utf-8', errors='ignore')
+                    for match in SV2_PUBKEY_RE.finditer(text):
+                        pubkey = match.group(1)
+                        ephemeral = bool(match.group(2))
+                    tail = text[-256:]
+    except (OSError, ValueError):
+        return None, False
+    return pubkey, ephemeral
+
+
+def resolve_sv2(config, log_path):
+    """Publish only public Stratum V2 endpoint metadata; never read or expose private keys."""
+    if not isinstance(config, dict):
+        return {'enabled': False, 'jdEnabled': False, 'sv2Urls': [], 'sv2JdUrls': [], 'authorityPubkey': None, 'ephemeralKeys': False}
+    sv2_urls = normalize_urls(config.get('sv2url'))
+    sv2_jd_urls = normalize_urls(config.get('sv2jdurl'))
+    enabled = bool(sv2_urls or sv2_jd_urls)
+    jd_enabled = bool(sv2_jd_urls)
+    if not enabled:
+        return {'enabled': False, 'jdEnabled': False, 'sv2Urls': [], 'sv2JdUrls': [], 'authorityPubkey': None, 'ephemeralKeys': False}
+    pubkey, log_ephemeral = extract_sv2_pubkey(log_path)
+    missing_key_paths = not (
+        isinstance(config.get('sv2_authority_key'), str) and config.get('sv2_authority_key').strip()
+        and isinstance(config.get('sv2_static_key'), str) and config.get('sv2_static_key').strip()
+    )
+    return {
+        'enabled': True,
+        'jdEnabled': jd_enabled,
+        'sv2Urls': sv2_urls,
+        'sv2JdUrls': sv2_jd_urls,
+        'authorityPubkey': pubkey,
+        'ephemeralKeys': missing_key_paths or log_ephemeral,
+    }
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--config', type=Path, default=CONFIG)
     parser.add_argument('--output', type=Path, default=OUTPUT)
+    parser.add_argument('--sv2-output', type=Path, default=None)
+    parser.add_argument('--log', type=Path, default=None)
     parser.add_argument('--interval', type=int, default=900)
     parser.add_argument('--once', action='store_true')
     args = parser.parse_args()
     # Only local operator arguments select files; RPC and geolocation data never do.
     config_file, output = args.config, args.output
+    sv2_output = args.sv2_output or output.with_name('sv2.json')
+    log_file = args.log or (output.parent.parent / 'ckpool.log')
     while True:
+        config = None
         try:
             config = read_json(config_file)
             if not isinstance(config, dict):
@@ -203,9 +268,22 @@ def main():
         except (OSError, ValueError):
             location = None
         publish(output, location)
+        sv2 = resolve_sv2(config, log_file)
+        publish(sv2_output, sv2)
         if args.once:
             return
-        time.sleep(max(60, args.interval))
+        # On startup CKPool may log its SV2 authority pubkey a few seconds after UI boot.
+        remaining = max(60, args.interval)
+        if sv2['enabled'] and not sv2['authorityPubkey']:
+            for delay in (5, 10, 15):
+                time.sleep(delay)
+                remaining -= delay
+                sv2 = resolve_sv2(config, log_file)
+                publish(sv2_output, sv2)
+                if sv2['authorityPubkey']:
+                    break
+        if remaining > 0:
+            time.sleep(remaining)
 
 
 if __name__ == '__main__':

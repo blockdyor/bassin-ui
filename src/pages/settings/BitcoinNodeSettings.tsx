@@ -113,6 +113,23 @@ export default function BitcoinNodeSettings({config, disabled, onChange}: Props)
 						Default: 100 ms. Shared by all nodes with polling enabled. This does not control ZMQ delivery or periodic work updates to miners.
 					</p>
 				</div>
+				<div className='border-t border-white/20 pt-5'>
+					<label htmlFor='ipcmining' className='text-[14px] text-white'>Mining IPC Socket (Optional)</label>
+					<div className='my-1'>
+						<span className='text-[12px] text-white/50 bg-[#26343d] px-1 rounded-sm'>ipcmining</span>
+					</div>
+					<p className='text-[13px] text-white/60 mt-2 mb-3'>
+						Optional Unix socket path for Bitcoin Core v32.x <code className='font-mono'>-ipcbind</code>. Leave blank
+						to use standard JSON-RPC and ZMQ (fully compatible with Bitcoin Knots 29.3 and all Bitcoin Core versions).
+					</p>
+					<InputField
+						id='ipcmining'
+						disabled={disabled}
+						placeholder='/tmp/btc-mining.sock'
+						value={typeof config.ipcmining === 'string' ? config.ipcmining : ''}
+						onChange={(e) => onChange('ipcmining', e.target.value.trim() || undefined)}
+					/>
+				</div>
 			</section>
 			{nodes.length > 1 && <p className='text-[12px] text-white/50'>
 				The polling switch applies to the first node. {nodes.length - 1} additional node connection(s) preserved. Edit them in Advanced.

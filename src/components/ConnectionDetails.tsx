@@ -18,7 +18,9 @@ import {Button} from '@/components/ui/button'
 import {Popover, PopoverContent, PopoverTrigger} from '@/components/ui/popover'
 import {GradientBorderFromTop} from '@/components/shared/GradientBorders'
 import FadeScrollArea from '@/components/shared/FadeScrollArea'
-import {BASSIN_STRATUM_PORT} from '@/helpers/constants'
+import {BASSIN_STRATUM_PORT, BASSIN_SV2_JD_PORT, BASSIN_SV2_PORT} from '@/helpers/constants'
+import {formatSv2Url} from '@/helpers/sv2'
+import {usePoolSv2} from '@/hooks/usePoolSv2'
 
 function Field({label, value}: {label: string; value: string}) {
 	const [open, setOpen] = useState(false)
@@ -70,6 +72,9 @@ function Field({label, value}: {label: string; value: string}) {
 export default function ConnectionDetails() {
 	const host = window.location.hostname
 	const uri = `stratum+tcp://${host}:${BASSIN_STRATUM_PORT}`
+	const {data: sv2} = usePoolSv2()
+	const sv2Uri = formatSv2Url(host, BASSIN_SV2_PORT, sv2?.authorityPubkey)
+	const sv2JdUri = formatSv2Url(host, BASSIN_SV2_JD_PORT, sv2?.authorityPubkey)
 	return (
 		<Dialog>
 			<DialogTrigger asChild>
@@ -107,6 +112,9 @@ export default function ConnectionDetails() {
 							<TabsTrigger className='bassin-tab' value='stratum'>
 								Stratum
 							</TabsTrigger>
+							<TabsTrigger className='bassin-tab' value='stratum-v2'>
+								Stratum V2
+							</TabsTrigger>
 							<TabsTrigger className='bassin-tab' value='worker'>
 								Worker Setup
 							</TabsTrigger>
@@ -133,9 +141,55 @@ export default function ConnectionDetails() {
 								Bassin, enter the actual mining host and port.
 							</p>
 						</TabsContent>
+						<TabsContent value='stratum-v2' className='mt-4 min-h-[310px] space-y-4'>
+							{sv2 && !sv2.enabled && (
+								<p role='status' className='text-xs text-amber-200 bg-amber-400/10 rounded-lg p-3'>
+									Stratum V2 is not enabled in the running <code className='font-mono'>ckpool.conf</code>. Enable it
+									in Settings → Stratum V2, export the config, and restart Bassin.
+								</p>
+							)}
+							{sv2?.enabled && sv2.ephemeralKeys && (
+								<p role='status' className='text-xs text-amber-200 bg-amber-400/10 rounded-lg p-3'>
+									The running pool is using ephemeral SV2 keys. Set persistent{' '}
+									<code className='font-mono'>/sv2</code> key paths in Settings → Stratum V2 so your authority key
+									survives restarts.
+								</p>
+							)}
+							<div className='flex flex-col sm:flex-row gap-4'>
+								<div className='bg-gradient-to-b from-[#18262e] to-[#0b1319] p-5 rounded-xl sm:w-[240px] shrink-0'>
+									<h3 className='text-white/60 text-[12px] font-normal mb-3 text-center'>Noise-Encrypted SV2</h3>
+									{sv2?.authorityPubkey ? (
+										<div className='mx-auto w-[196px] h-[196px] p-2 bg-[#d6f4ff] rounded-md'>
+											<QrSvg value={sv2Uri} width={180} height={180} level='Q' fgColor='#092632' bgColor='#d6f4ff' />
+										</div>
+									) : (
+										<div className='mx-auto w-[196px] h-[196px] p-4 rounded-md bg-white/5 flex items-center justify-center text-center text-xs text-white/55'>
+											{sv2?.enabled
+												? 'Waiting for CKPool to log its SV2 authority key.'
+												: 'Enable Stratum V2 in Settings to generate your authority key.'}
+										</div>
+									)}
+								</div>
+								<div className='divide-y divide-white/6 overflow-hidden rounded-xl w-full h-fit bg-gradient-to-b from-[#18262e] to-[#0b1319]'>
+									<Field label='SV2 URL' value={sv2Uri} />
+									<Field label='Host' value={host} />
+									<Field label='Port' value={String(BASSIN_SV2_PORT)} />
+									<Field
+										label='Authority Key'
+										value={sv2?.authorityPubkey ?? 'Check Settings → Logs after enabling SV2'}
+									/>
+									{sv2?.jdEnabled && <Field label='JD URL' value={sv2JdUri} />}
+								</div>
+							</div>
+							<p className='text-white/60 text-[13px]'>
+								Noise-encrypted Stratum V2 requires the pool’s Base58Check authority public key in the URL path. Solo
+								SV2 mining works with both Bitcoin Core and Bitcoin Knots 29.3+ over RPC and ZMQ.
+							</p>
+						</TabsContent>
 						<TabsContent value='worker' className='mt-4 min-h-[310px] space-y-4'>
 							<p className='text-[13px] text-white/60'>
-								Use a Bitcoin address you control, followed by a dot and a unique worker name for each miner.
+								Use a Bitcoin address you control, followed by a dot and a unique worker name for each miner. For
+								Stratum V2, use the same format as your channel <code className='font-mono'>user_identity</code>.
 							</p>
 							<div className='divide-y divide-white/6 rounded-xl bg-white/6'>
 								<Field label='Username' value='<bitcoin-address>.<worker-name>' />

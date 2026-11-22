@@ -139,4 +139,34 @@ class PoolLocationTest(unittest.TestCase):
             self.assertIsNone(json.loads(path.read_text()))
             self.assertEqual(list(path.parent.glob('.location-*')),[])
 
+    def test_sv2_metadata_extracts_latest_public_key_only(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            log = root / 'ckpool.log'
+            key1 = '9auqWEzQGCt2s1Y8V7uV7K3t9xN4qP6mR2kL8wX5jH1cB3dE7fG'
+            key2 = '9bvqWEzQGCt2s1Y8V7uV7K3t9xN4qP6mR2kL8wX5jH1cB3dE7fH'
+            # Pad across chunk boundaries (> 64 KiB) to verify streaming scan.
+            log.write_text(
+                f'[2026-11-22 10:00:00] SV2 authority URL path (stratum2+tcp://<host>:<port>/{key1}) [new/ephemeral material]\n'
+                + ('x' * 70000) + '\n'
+                + f'[2026-11-22 10:05:00] SV2 authority URL path (stratum2+tcp://<host>:<port>/{key2})\n'
+            )
+            cfg = {
+                'sv2url': ['0.0.0.0:3336'],
+                'sv2jdurl': ['0.0.0.0:3337'],
+                'sv2_authority_key': '/sv2/sv2_authority.key',
+                'sv2_static_key': '/sv2/sv2_static.key',
+            }
+            info = m.resolve_sv2(cfg, log)
+            self.assertEqual(info['enabled'], True)
+            self.assertEqual(info['jdEnabled'], True)
+            self.assertEqual(info['authorityPubkey'], key2)
+            self.assertEqual(info['ephemeralKeys'], False)
+            # Missing persistent key paths flags ephemeralKeys=True.
+            self.assertEqual(m.resolve_sv2({'sv2url': '0.0.0.0:3336'}, log)['ephemeralKeys'], True)
+            # Disabled SV2 publishes disabled metadata without scanning keys.
+            disabled = m.resolve_sv2({'btcd': []}, log)
+            self.assertEqual(disabled['enabled'], False)
+            self.assertIsNone(disabled['authorityPubkey'])
+
 if __name__ == '__main__': unittest.main()

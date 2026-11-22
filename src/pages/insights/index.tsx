@@ -7,6 +7,7 @@ import {Input} from '@/components/ui/input'
 import InfoDialog from '@/components/shared/InfoDialog'
 import PoolNotice from '@/components/PoolNotice'
 import {usePoolData} from '@/hooks/PoolContext'
+import {usePoolSv2} from '@/hooks/usePoolSv2'
 import {age, duration, hashrate, number} from '@/helpers/display'
 import {utcDateTime, utcTime, utcIso} from '@/helpers/time'
 import {bestShareEver} from '@/helpers/mining'
@@ -38,6 +39,7 @@ function workerDisplayName(workername: string): string {
 }
 export default function InsightsPage() {
 	const {pool, users, chart, usersError, loading} = usePoolData()
+	const {data: sv2} = usePoolSv2()
 	const [now, setNow] = useState(Date.now())
 	const [query, setQuery] = useState('')
 	const [sort, setSort] = useState('hashrate')
@@ -170,6 +172,36 @@ export default function InsightsPage() {
 					</div>
 				</CardContent>
 			</InsightCard>
+			{(pool?.sv2 || sv2?.enabled) && (
+				<InsightCard>
+					<CardHeader>
+						<CardTitle className='font-outfit text-white text-[20px] font-normal pt-2'>Stratum V2</CardTitle>
+					</CardHeader>
+					<CardContent>
+						<div className='grid grid-cols-2 md:grid-cols-4 gap-6 text-[13px]'>
+							{[
+								['SV2 clients', pool?.sv2 ? pool.sv2.clients : 0],
+								['SV2 channels', pool?.sv2 ? pool.sv2.channels : 0],
+								['JD clients', pool?.sv2 ? pool.sv2.jdclients : 0],
+								['Job Declaration', pool?.sv2jd || sv2?.jdEnabled ? 'Enabled' : 'Disabled'],
+								...(pool?.sv2jd
+									? [
+											['Declared jobs', number(pool.sv2jd.declare_ok)],
+											['Active JD tokens', pool.sv2jd.tokens],
+											['Solutions pushed', number(pool.sv2jd.push_solution)],
+											['Declare errors', number(pool.sv2jd.declare_error)],
+										]
+									: []),
+							].map(([label, value]) => (
+								<div key={label}>
+									<div className='text-white/40 mb-2'>{label}</div>
+									<div className='text-white/85 font-outfit text-lg'>{value}</div>
+								</div>
+							))}
+						</div>
+					</CardContent>
+				</InsightCard>
+			)}
 			<InsightCard>
 				<CardHeader className='flex flex-row items-center justify-between gap-4 flex-wrap'>
 					<CardTitle className='font-outfit text-white text-[20px] font-normal pt-2'>Workers</CardTitle>
