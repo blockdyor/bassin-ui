@@ -1,6 +1,6 @@
 import {Button} from '@/components/ui/button'
 import {normalizeUrlList, type Config} from '@/helpers/config'
-import {BASSIN_SV2_JD_PORT, BASSIN_SV2_PORT} from '@/helpers/constants'
+import {BASSIN_STRATUM_PORT, BASSIN_SV2_JD_PORT, BASSIN_SV2_PORT} from '@/helpers/constants'
 import InputField from './InputField'
 import Toggle from './Toggle'
 
@@ -20,11 +20,13 @@ function parseListInput(raw: string): string[] | undefined {
 }
 
 export default function StratumV2Settings({config, disabled, onChange, onPatch}: Props) {
+	const sv1Urls = normalizeUrlList(config.serverurl)
 	const sv2Urls = normalizeUrlList(config.sv2url)
 	const sv2JdUrls = normalizeUrlList(config.sv2jdurl)
 	const sv2Enabled = sv2Urls.length > 0
 	const jdEnabled = sv2JdUrls.length > 0
 	const anySv2 = sv2Enabled || jdEnabled
+	const sv1MissingWithSv2 = anySv2 && sv1Urls.length === 0
 	const authorityKey = typeof config.sv2_authority_key === 'string' ? config.sv2_authority_key : ''
 	const staticKey = typeof config.sv2_static_key === 'string' ? config.sv2_static_key : ''
 	const missingPersistentKeys = anySv2 && (!authorityKey.trim() || !staticKey.trim())
@@ -40,6 +42,22 @@ export default function StratumV2Settings({config, disabled, onChange, onPatch}:
 				</p>
 			</div>
 
+			{sv1MissingWithSv2 && (
+				<div
+					role='status'
+					className='flex flex-wrap items-center justify-between gap-3 text-xs text-amber-200 bg-amber-400/10 rounded-lg p-3'
+				>
+					<p className='flex-1 min-w-[220px]'>
+						Stratum V1 (<code className='font-mono'>serverurl</code>) is not set. When Stratum V2 is enabled without{' '}
+						<code className='font-mono'>serverurl</code>, CKPool runs in Stratum V2-only mode and closes Stratum V1 port{' '}
+						{BASSIN_STRATUM_PORT}.
+					</p>
+					<Button type='button' size='sm' disabled={disabled} onClick={() => onChange('serverurl', ['0.0.0.0:3333'])}>
+						Enable Stratum V1 (0.0.0.0:3333)
+					</Button>
+				</div>
+			)}
+
 			<div className='border-t border-white/20 pt-5 space-y-4'>
 				<div className='flex justify-between items-center gap-4'>
 					<div>
@@ -53,6 +71,7 @@ export default function StratumV2Settings({config, disabled, onChange, onPatch}:
 						onToggle={(enabled) => {
 							if (enabled) {
 								const updates: Record<string, unknown> = {sv2url: ['0.0.0.0:3336']}
+								if (!sv1Urls.length) updates.serverurl = ['0.0.0.0:3333']
 								if (!authorityKey.trim()) updates.sv2_authority_key = '/sv2/sv2_authority.key'
 								if (!staticKey.trim()) updates.sv2_static_key = '/sv2/sv2_static.key'
 								onPatch(updates)
@@ -92,6 +111,7 @@ export default function StratumV2Settings({config, disabled, onChange, onPatch}:
 						onToggle={(enabled) => {
 							if (enabled) {
 								const updates: Record<string, unknown> = {sv2jdurl: ['0.0.0.0:3337']}
+								if (!sv1Urls.length) updates.serverurl = ['0.0.0.0:3333']
 								if (!authorityKey.trim()) updates.sv2_authority_key = '/sv2/sv2_authority.key'
 								if (!staticKey.trim()) updates.sv2_static_key = '/sv2/sv2_static.key'
 								onPatch(updates)

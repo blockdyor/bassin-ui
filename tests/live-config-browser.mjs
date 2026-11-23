@@ -131,6 +131,7 @@ try {
 	)
 	const afterSave = JSON.parse(readFileSync(configPath, 'utf8'))
 	assert.deepEqual(afterSave.sv2url, ['0.0.0.0:3336'])
+	assert.deepEqual(afterSave.serverurl, ['0.0.0.0:3333'])
 	assert.equal(afterSave.btcd[0].pass, 'top-secret-password')
 	assert.equal(existsSync(triggerPath), false)
 

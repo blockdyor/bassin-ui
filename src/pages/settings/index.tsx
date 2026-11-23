@@ -495,8 +495,9 @@ export default function SettingsPage() {
 													/>
 												</div>
 												<p className='text-[13px] text-white/60'>
-													Comma-separated host:port bindings for Stratum V1. Leaving blank binds all interfaces on port
-													3333.
+													Comma-separated host:port bindings for Stratum V1 (for example 0.0.0.0:3333). Required to keep
+													Stratum V1 port 3456 active whenever Stratum V2 is enabled; leaving blank only defaults to port 3333
+													when Stratum V2 is off.
 												</p>
 											</div>
 											<div className='flex justify-between items-center gap-4'>
