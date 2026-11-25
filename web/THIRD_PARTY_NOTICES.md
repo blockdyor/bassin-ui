@@ -19,3 +19,5 @@ The copied/adapted upstream code and assets remain subject to **PolyForm Noncomm
 Bassin retains its CKPool backend, static status-file API, logo, and mining identity. Umbrel’s Bitcoin Core RPC backend and administrative API are not included.
 
 DM Sans and Outfit are distributed under the SIL Open Font License; their original notices ship in `web/licenses/dm-sans-OFL.txt` and `web/licenses/outfit-OFL.txt`.
+
+Offline IP geolocation for the Home globe marker uses IP Geolocation by [DB-IP](https://db-ip.com) (DB-IP City Lite, distributed under the [Creative Commons Attribution 4.0 International License](https://creativecommons.org/licenses/by/4.0/)). All lookups run locally against the bundled MMDB file with no external network requests.

@@ -47,19 +47,68 @@ class PoolLocationTest(unittest.TestCase):
             m.resolve({'btcd':[{}]},bad,rpc_call=rpc,geolocate=lambda ip:calls.append(ip) or {'source':'bitcoin-node','ip':ip})
             self.assertEqual(calls,['8.8.8.8'])
 
-    def test_explicit_ip_lookup_and_response_identity(self):
-        class Response:
-            def __enter__(self): return self
-            def __exit__(self,*args): pass
-            def read(self,limit): return json.dumps({'success':True,'ip':'8.8.8.8','latitude':1,'longitude':2}).encode()
-        with patch.object(m,'urlopen',return_value=Response()) as request:
-            location=m.lookup('8.8.8.8')
-            self.assertEqual(location['source'],'bitcoin-node')
-            self.assertTrue(request.call_args.args[0].full_url.startswith('https://ipwho.is/8.8.8.8?'))
-            self.assertIsNone(m.lookup('1.1.1.1'))
-            request.reset_mock()
-            self.assertIsNone(m.lookup('127.0.0.1'))
-            request.assert_not_called()
+    def test_no_external_http_geolocation_client(self):
+        source = Path(m.__file__).read_text(encoding='utf-8')
+        self.assertNotIn('ipwho.is', source)
+        self.assertNotIn('urlopen', source)
+        self.assertNotIn('urllib.request', source)
+
+    def test_local_mmdb_lookup_and_validation(self):
+        records = {
+            '8.8.8.8': {'location': {'latitude': 37.751, 'longitude': -97.822}},
+            '2606:4700:4700::1111': {'location': {'latitude': -33.8688, 'longitude': 151.2093}},
+            '1.1.1.1': {'location': {'latitude': 95, 'longitude': 0}},
+            '9.9.9.9': {'location': {'latitude': float('nan'), 'longitude': 0}},
+            '4.2.2.1': {'country': {'iso_code': 'US'}},
+        }
+        opened = []
+
+        class Reader:
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *args):
+                pass
+
+            def get(self, ip):
+                return records.get(ip)
+
+        def factory(path, mode=0):
+            opened.append((path, mode))
+            return Reader()
+
+        with tempfile.TemporaryDirectory() as directory:
+            db = Path(directory) / 'geoip.mmdb'
+            db.write_bytes(b'fixture')
+
+            loc4 = m.lookup('8.8.8.8', db_path=db, reader_factory=factory)
+            self.assertEqual(loc4['source'], 'bitcoin-node')
+            self.assertEqual(loc4['ip'], '8.8.8.8')
+            self.assertEqual(loc4['latitude'], 37.751)
+            self.assertEqual(loc4['longitude'], -97.822)
+
+            loc6 = m.lookup('[2606:4700:4700::1111]:8333', db_path=db, reader_factory=factory)
+            self.assertEqual(loc6['ip'], '2606:4700:4700::1111')
+            self.assertEqual(loc6['latitude'], -33.8688)
+
+            self.assertIsNone(m.lookup('1.1.1.1', db_path=db, reader_factory=factory))
+            self.assertIsNone(m.lookup('9.9.9.9', db_path=db, reader_factory=factory))
+            self.assertIsNone(m.lookup('4.2.2.1', db_path=db, reader_factory=factory))
+            self.assertIsNone(m.lookup('203.0.113.1', db_path=db, reader_factory=factory))
+
+            opened.clear()
+            for non_public in ('127.0.0.1', '192.168.1.2', '10.0.0.1', 'secret.onion'):
+                self.assertIsNone(m.lookup(non_public, db_path=db, reader_factory=factory))
+            self.assertEqual(opened, [])
+
+            # Missing DB file returns None cleanly without raising.
+            self.assertIsNone(m.lookup('8.8.8.8', db_path=Path(directory) / 'missing.mmdb', reader_factory=factory))
+
+            # Corrupt DB errors fail closed as None.
+            def broken(path, mode=0):
+                raise RuntimeError('corrupt mmdb')
+
+            self.assertIsNone(m.lookup('8.8.8.8', db_path=db, reader_factory=broken))
 
     def test_once_with_custom_paths(self):
         from http.server import BaseHTTPRequestHandler, HTTPServer

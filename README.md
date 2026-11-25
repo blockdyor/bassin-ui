@@ -33,7 +33,7 @@ Development mode serves sample pool/user files with current timestamps and sampl
 
 ## Container deployment (`bassin-server.py`)
 
-The Docker image runs as non-root `1000:1000` with `ENTRYPOINT ["python3", "-O", "-B", "/opt/bassin/bassin-server.py"]` on port `8080` (with 256 KiB thread stacks and 15-second keep-alive timeouts for minimal RAM usage). It serves the code-split UI from `/ui`, pool stats/logs from `/www`, the live config API for `/config/ckpool.conf`, built-in umbrelOS dashboard widgets directly from disk (no separate `widget-server` container needed), and runs the background publisher for `/pool/location.json` and `/pool/sv2.json`.
+The Docker image runs as non-root `1000:1000` with `ENTRYPOINT ["python3", "-O", "-B", "/opt/bassin/bassin-server.py"]` on port `8080` (with 256 KiB thread stacks and 15-second keep-alive timeouts for minimal RAM usage). It serves the code-split UI from `/ui`, pool stats/logs from `/www`, the live config API for `/config/ckpool.conf`, built-in umbrelOS dashboard widgets directly from disk (no separate `widget-server` container needed), and runs the background publisher for `/pool/location.json` (using an offline local DB-IP City Lite MMDB via `py3-maxminddb` with zero external geolocation requests) and `/pool/sv2.json`.
 
 | Path | Content |
 | --- | --- |

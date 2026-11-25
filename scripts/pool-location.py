@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Publish a Bitcoin-node-derived location; never discover the caller's public IP."""
+"""Publish a Bitcoin-node-derived location using offline local GeoIP; never contact external geolocation APIs."""
 import argparse
 import base64
 from collections import Counter
@@ -15,11 +15,16 @@ import secrets
 import socket
 from contextlib import contextmanager
 import time
-from urllib.parse import quote, urlsplit
-from urllib.request import Request, urlopen
+from urllib.parse import urlsplit
+
+try:
+    import maxminddb
+except ImportError:  # pragma: no cover - installed via py3-maxminddb in the container image
+    maxminddb = None
 
 CONFIG = Path('/config/ckpool.conf')
 OUTPUT = Path('/www/pool/location.json')
+GEOIP_DB = Path(os.environ.get('BASSIN_GEOIP_DB', '/opt/bassin/geoip.mmdb'))
 SV2_PUBKEY_RE = re.compile(
     r'SV2 authority URL path \(stratum2\+tcp://<host>:<port>/([1-9A-HJ-NP-Za-km-z]{32,80})\)(\s+\[new/ephemeral material\])?'
 )
@@ -94,21 +99,48 @@ def rpc(node, method):
     return data['result']
 
 
-def lookup(ip):
-    # An explicit, node-reported IP is mandatory. Never call the provider's self-IP endpoint.
-    if not public_ip(ip):
+def _extract_coords(record):
+    if not isinstance(record, dict):
         return None
-    url = 'https://ipwho.is/' + quote(ip, safe=':') + '?fields=ip,success,latitude,longitude'
-    with urlopen(Request(url, headers={'User-Agent':'Bassin-location/2.1.14'}), timeout=10) as response:
-        data = json.loads(response.read(65536))
-    lat, lon = data.get('latitude'), data.get('longitude')
-    if data.get('success') is not True or public_ip(data.get('ip')) != ip:
+    location = record.get('location')
+    if not isinstance(location, dict):
         return None
+    lat, lon = location.get('latitude'), location.get('longitude')
     if any(type(value) not in (int, float) or not math.isfinite(value) for value in (lat, lon)):
         return None
     if abs(lat) > 90 or abs(lon) > 180:
         return None
-    return {'source':'bitcoin-node','ip':ip,'latitude':lat,'longitude':lon,'updatedAt':int(time.time()*1000)}
+    return float(lat), float(lon)
+
+
+def lookup(ip, db_path=None, reader_factory=None):
+    """Resolve a node-reported public IP to approximate coordinates using the local MMDB database."""
+    normalized = public_ip(ip)
+    if not normalized:
+        return None
+    open_db = reader_factory or (maxminddb.open_database if maxminddb is not None else None)
+    if open_db is None:
+        return None
+    target = Path(db_path) if db_path is not None else GEOIP_DB
+    if not target.is_file():
+        return None
+    mode = getattr(maxminddb, 'MODE_FILE', 0) if reader_factory is None else 0
+    try:
+        with open_db(str(target), mode=mode) as reader:
+            record = reader.get(normalized)
+    except (OSError, ValueError, RuntimeError):
+        return None
+    coords = _extract_coords(record)
+    if coords is None:
+        return None
+    lat, lon = coords
+    return {
+        'source': 'bitcoin-node',
+        'ip': normalized,
+        'latitude': lat,
+        'longitude': lon,
+        'updatedAt': int(time.time() * 1000),
+    }
 
 
 def resolve(config, previous=None, rpc_call=rpc, geolocate=lookup):
@@ -247,6 +279,7 @@ def main():
     parser.add_argument('--output', type=Path, default=OUTPUT)
     parser.add_argument('--sv2-output', type=Path, default=None)
     parser.add_argument('--log', type=Path, default=None)
+    parser.add_argument('--geoip-db', type=Path, default=GEOIP_DB)
     parser.add_argument('--interval', type=int, default=900)
     parser.add_argument('--once', action='store_true')
     args = parser.parse_args()
@@ -254,6 +287,8 @@ def main():
     config_file, output = args.config, args.output
     sv2_output = args.sv2_output or output.with_name('sv2.json')
     log_file = args.log or (output.parent.parent / 'ckpool.log')
+    def geolocate(ip):
+        return lookup(ip, db_path=args.geoip_db)
     while True:
         config = None
         try:
@@ -264,7 +299,7 @@ def main():
                 previous = read_json(output)
             except (OSError, ValueError):
                 previous = None
-            location = resolve(config, previous)
+            location = resolve(config, previous, geolocate=geolocate)
         except (OSError, ValueError):
             location = None
         publish(output, location)
