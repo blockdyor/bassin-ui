@@ -6,7 +6,7 @@ import {GradientBorderTopBottom, GradientBorderFromCorners} from '@/components/s
 import InfoDialog from '@/components/shared/InfoDialog'
 import PoolNotice from '@/components/PoolNotice'
 import {usePoolData} from '@/hooks/PoolContext'
-import {duration, hashrate} from '@/helpers/display'
+import {hashrate, runningDetail} from '@/helpers/display'
 import {usePoolLocation} from '@/hooks/usePoolLocation'
 import Globe from './Globe'
 import PeersChart from './PeersChart'
@@ -39,13 +39,13 @@ export default function HomePage() {
 						<div className='relative md:top-[-20%] md:right-[-5%] sm:top-[-40%] sm:right-[20%] top-[-25%] right-[40%]'>
 							<Globe width={globeSize} height={globeSize} location={location} />
 						</div>
-						<div className='absolute top-[7%] left-[5%] flex items-center gap-1 text-[14px]'>
+						<div className='absolute top-[7%] left-[5%] right-10 flex items-center gap-1 text-[14px] min-w-0'>
 							<StatusDot running={running} />
-							<span className={running ? 'text-[#76d9f5] ml-1' : 'text-white/60 ml-1'}>
+							<span className={running ? 'text-[#76d9f5] ml-1 shrink-0' : 'text-white/60 ml-1 shrink-0'}>
 								{loading ? 'Connecting' : running ? 'Running' : 'Waiting for updates'}
 							</span>
-							{running && <span className='text-white/60'>for {duration(pool.runtime)}</span>}
-							{import.meta.env.DEV && <span className='text-white/35 text-xs ml-1'>· Preview</span>}
+							{running && <span className='text-white/60 truncate'>{runningDetail(pool)}</span>}
+							{import.meta.env.DEV && <span className='text-white/35 text-xs ml-1 shrink-0'>· Preview</span>}
 						</div>
 						<div className='absolute top-3 right-3'>
 							<InfoDialog
