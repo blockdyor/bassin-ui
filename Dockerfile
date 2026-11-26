@@ -4,7 +4,7 @@ ARG GEOIP_DB_URL="https://raw.githubusercontent.com/wp-statistics/DbIP-City-lite
 ARG GEOIP_DB_SHA256="b69c625515f636ac92112b71df26bb92a5748f648c79bad124ecd9ba1c97bf4a"
 
 RUN apk add --no-cache curl \
-    && curl -fsSL "${GEOIP_DB_URL}" -o /geoip.mmdb.gz \
+    && curl --proto '=https' --tlsv1.2 -fsSL "${GEOIP_DB_URL}" -o /geoip.mmdb.gz \
     && echo "${GEOIP_DB_SHA256}  /geoip.mmdb.gz" | sha256sum -c - \
     && gunzip -c /geoip.mmdb.gz > /geoip.mmdb \
     && rm -f /geoip.mmdb.gz \
