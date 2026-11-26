@@ -1,6 +1,7 @@
 // Adapted directly from Umbrel Bitcoin's HomePage: same hero, globe crop, ring, and lower strip.
-import {useEffect, useState} from 'react'
+import {lazy, Suspense, useEffect, useState} from 'react'
 import {Info} from 'lucide-react'
+import GlobeImage from '@/assets/globe-full.webp'
 import {Card, CardContent} from '@/components/ui/card'
 import {GradientBorderTopBottom, GradientBorderFromCorners} from '@/components/shared/GradientBorders'
 import InfoDialog from '@/components/shared/InfoDialog'
@@ -8,10 +9,11 @@ import PoolNotice from '@/components/PoolNotice'
 import {usePoolData} from '@/hooks/PoolContext'
 import {hashrate, runningDetail} from '@/helpers/display'
 import {usePoolLocation} from '@/hooks/usePoolLocation'
-import Globe from './Globe'
 import PeersChart from './PeersChart'
 import StatusDot from './StatusDot'
 import HashrateAverages from './HashrateAverages'
+
+const Globe = lazy(() => import('./Globe'))
 
 export default function HomePage() {
 	const {pool, loading, error, stale} = usePoolData()
@@ -37,7 +39,15 @@ export default function HomePage() {
 						<div className='absolute top-[-50%] left-[-40%] w-[500%] h-[500%] rounded-full bg-[#080d10] pointer-events-none' />
 						<GradientBorderFromCorners />
 						<div className='relative md:top-[-20%] md:right-[-5%] sm:top-[-40%] sm:right-[20%] top-[-25%] right-[40%]'>
-							<Globe width={globeSize} height={globeSize} location={location} />
+							<Suspense
+								fallback={
+									<div style={{width: globeSize, height: globeSize, scale: 0.8}}>
+										<img src={GlobeImage} alt='Bitcoin network globe' />
+									</div>
+								}
+							>
+								<Globe width={globeSize} height={globeSize} location={location} />
+							</Suspense>
 						</div>
 						<div className='absolute top-[7%] left-[5%] right-10 flex items-center gap-1 text-[14px] min-w-0'>
 							<StatusDot running={running} />

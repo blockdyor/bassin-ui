@@ -273,6 +273,38 @@ class BassinServerTest(unittest.TestCase):
         self.assertEqual(lb['items'][0], {'text': '#1 nerdqaxe', 'subtext': 'Best ever: 2.5T · 4.80 Th/s'})
         self.assertEqual(lb['items'][1], {'text': '#2 bc1qba…ffix', 'subtext': 'Best ever: 850M · Idle'})
 
+    def test_precompressed_gzip_and_immutable_asset_caching(self):
+        import gzip
+        payload = b'console.log("hello bassin");' * 100
+        asset = self.ui_dir / 'assets/app-abc123.js'
+        asset.write_bytes(payload)
+        asset.with_name(asset.name + '.gz').write_bytes(gzip.compress(payload))
+
+        status, headers, body = self.request('GET', '/assets/app-abc123.js', headers={'Accept-Encoding': 'gzip, br'})
+        self.assertEqual(status, 200)
+        self.assertEqual(headers.get('Content-Encoding'), 'gzip')
+        self.assertEqual(headers.get('Vary'), 'Accept-Encoding')
+        self.assertEqual(headers.get('Content-Type'), 'application/javascript')
+        self.assertEqual(headers.get('Cache-Control'), 'public, max-age=31536000, immutable')
+        self.assertEqual(gzip.decompress(body), payload)
+
+        # Clients without gzip get raw uncompressed bytes.
+        status, headers, body = self.request('GET', '/assets/app-abc123.js', headers={'Accept-Encoding': 'identity'})
+        self.assertEqual(status, 200)
+        self.assertIsNone(headers.get('Content-Encoding'))
+        self.assertEqual(body, payload)
+
+        # Range requests bypass gzip sidecars and serve raw slices.
+        status, headers, body = self.request('GET', '/assets/app-abc123.js', headers={'Accept-Encoding': 'gzip', 'Range': 'bytes=0-6'})
+        self.assertEqual(status, 206)
+        self.assertIsNone(headers.get('Content-Encoding'))
+        self.assertEqual(body, b'console')
+
+        # index.html remains no-store.
+        status, headers, _ = self.request('GET', '/')
+        self.assertEqual(status, 200)
+        self.assertEqual(headers.get('Cache-Control'), 'no-store')
+
 
 if __name__ == '__main__':
     unittest.main()

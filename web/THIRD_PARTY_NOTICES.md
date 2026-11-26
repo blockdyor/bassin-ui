@@ -10,7 +10,7 @@ This frontend directly ports components from [getumbrel/umbrel-bitcoin/apps/ui](
 - `src/pages/insights/InsightsCard.tsx`, `ChartDefaults.tsx`: upstream cards and chart defaults; CKPool metrics/worker data replace node data.
 - `src/pages/settings/InputField.tsx`, `Toggle.tsx`: upstream controls. Settings and ConnectionDetails adapt upstream layouts to CKPool options, logs, Stratum, and local config import/export.
 - `src/index.css`, `tailwind.config.ts`, `src/lib/`, `src/main.tsx`: upstream styles, fonts, utilities, and bootstrap, with Bassin color changes.
-- `src/assets/` (except Bassin’s existing `logo.svg`), geographic dataset, and Roboto font: copied upstream assets. DM Sans and Outfit are bundled through their upstream npm font packages.
+- `src/assets/` (except Bassin’s existing `logo.svg`) and geographic dataset: copied upstream assets. DM Sans and Outfit are bundled through their upstream npm font packages.
 
 The copied/adapted upstream code and assets remain subject to **PolyForm Noncommercial 1.0.0** and the upstream notices in [licenses/umbrel-bitcoin.md](licenses/umbrel-bitcoin.md). Copies ship in `web/umbrel-bitcoin-license.md` and this notice in `web/THIRD_PARTY_NOTICES.md`. Bassin’s original [GPL license](LICENSE) remains applicable to its original code; it does not replace the upstream license.
 
@@ -20,4 +20,4 @@ Bassin retains its CKPool backend, static status-file API, logo, and mining iden
 
 DM Sans and Outfit are distributed under the SIL Open Font License; their original notices ship in `web/licenses/dm-sans-OFL.txt` and `web/licenses/outfit-OFL.txt`.
 
-Offline IP geolocation for the Home globe marker uses IP Geolocation by [DB-IP](https://db-ip.com) (DB-IP City Lite, distributed under the [Creative Commons Attribution 4.0 International License](https://creativecommons.org/licenses/by/4.0/)). All lookups run locally against the bundled MMDB file with no external network requests.
+Offline IP geolocation for the Home globe marker uses IP Geolocation by [DB-IP](https://db-ip.com) (DB-IP City Lite, distributed under the [Creative Commons Attribution 4.0 International License](https://creativecommons.org/licenses/by/4.0/)), compiled at build time into a compact coordinates-only lookup table. All lookups run locally with no external network requests.

@@ -53,62 +53,52 @@ class PoolLocationTest(unittest.TestCase):
         self.assertNotIn('urlopen', source)
         self.assertNotIn('urllib.request', source)
 
-    def test_local_mmdb_lookup_and_validation(self):
-        records = {
-            '8.8.8.8': {'location': {'latitude': 37.751, 'longitude': -97.822}},
-            '2606:4700:4700::1111': {'location': {'latitude': -33.8688, 'longitude': 151.2093}},
-            '1.1.1.1': {'location': {'latitude': 95, 'longitude': 0}},
-            '9.9.9.9': {'location': {'latitude': float('nan'), 'longitude': 0}},
-            '4.2.2.1': {'country': {'iso_code': 'US'}},
-        }
-        opened = []
+    def test_local_bgeo_lookup_and_validation(self):
+        import ipaddress
+        builder_spec = importlib.util.spec_from_file_location('build_geoip_db', Path(__file__).parents[1] / 'scripts/build-geoip-db.py')
+        builder = importlib.util.module_from_spec(builder_spec)
+        builder_spec.loader.exec_module(builder)
 
-        class Reader:
-            def __enter__(self):
-                return self
-
-            def __exit__(self, *args):
-                pass
-
-            def get(self, ip):
-                return records.get(ip)
-
-        def factory(path, mode=0):
-            opened.append((path, mode))
-            return Reader()
+        # Adjacent IPv4 ranges with matching quantized coordinates should coalesce cleanly.
+        v4_ranges = [
+            (int(ipaddress.IPv4Address('8.8.8.0')), int(ipaddress.IPv4Address('8.8.8.127')), 3775, -9782),
+            (int(ipaddress.IPv4Address('8.8.8.128')), int(ipaddress.IPv4Address('8.8.8.255')), 3775, -9782),
+            (int(ipaddress.IPv4Address('1.1.1.0')), int(ipaddress.IPv4Address('1.1.1.255')), 9500, 0),
+        ]
+        v6_ranges = [
+            (int(ipaddress.IPv6Address('2606:4700:4700::')), int(ipaddress.IPv6Address('2606:4700:4700::ffff')), -3387, 15121),
+        ]
 
         with tempfile.TemporaryDirectory() as directory:
-            db = Path(directory) / 'geoip.mmdb'
-            db.write_bytes(b'fixture')
+            db = Path(directory) / 'geoip.bin'
+            v4_cnt, v6_cnt = builder.write_bgeo(db, v4_ranges, v6_ranges)
+            self.assertEqual((v4_cnt, v6_cnt), (2, 1))
 
-            loc4 = m.lookup('8.8.8.8', db_path=db, reader_factory=factory)
+            loc4 = m.lookup('8.8.8.8', db_path=db)
             self.assertEqual(loc4['source'], 'bitcoin-node')
             self.assertEqual(loc4['ip'], '8.8.8.8')
-            self.assertEqual(loc4['latitude'], 37.751)
-            self.assertEqual(loc4['longitude'], -97.822)
+            self.assertEqual(loc4['latitude'], 37.75)
+            self.assertEqual(loc4['longitude'], -97.82)
 
-            loc6 = m.lookup('[2606:4700:4700::1111]:8333', db_path=db, reader_factory=factory)
+            loc6 = m.lookup('[2606:4700:4700::1111]:8333', db_path=db)
             self.assertEqual(loc6['ip'], '2606:4700:4700::1111')
-            self.assertEqual(loc6['latitude'], -33.8688)
+            self.assertEqual(loc6['latitude'], -33.87)
+            self.assertEqual(loc6['longitude'], 151.21)
 
-            self.assertIsNone(m.lookup('1.1.1.1', db_path=db, reader_factory=factory))
-            self.assertIsNone(m.lookup('9.9.9.9', db_path=db, reader_factory=factory))
-            self.assertIsNone(m.lookup('4.2.2.1', db_path=db, reader_factory=factory))
-            self.assertIsNone(m.lookup('203.0.113.1', db_path=db, reader_factory=factory))
+            # Out-of-range coordinates and unmapped IPs return None.
+            self.assertIsNone(m.lookup('1.1.1.1', db_path=db))
+            self.assertIsNone(m.lookup('203.0.113.1', db_path=db))
 
-            opened.clear()
             for non_public in ('127.0.0.1', '192.168.1.2', '10.0.0.1', 'secret.onion'):
-                self.assertIsNone(m.lookup(non_public, db_path=db, reader_factory=factory))
-            self.assertEqual(opened, [])
+                self.assertIsNone(m.lookup(non_public, db_path=db))
 
             # Missing DB file returns None cleanly without raising.
-            self.assertIsNone(m.lookup('8.8.8.8', db_path=Path(directory) / 'missing.mmdb', reader_factory=factory))
+            self.assertIsNone(m.lookup('8.8.8.8', db_path=Path(directory) / 'missing.bin'))
 
-            # Corrupt DB errors fail closed as None.
-            def broken(path, mode=0):
-                raise RuntimeError('corrupt mmdb')
-
-            self.assertIsNone(m.lookup('8.8.8.8', db_path=db, reader_factory=broken))
+            # Corrupt DB header fails closed as None.
+            corrupt = Path(directory) / 'corrupt.bin'
+            corrupt.write_bytes(b'NOPE123456789012')
+            self.assertIsNone(m.lookup('8.8.8.8', db_path=corrupt))
 
     def test_once_with_custom_paths(self):
         from http.server import BaseHTTPRequestHandler, HTTPServer

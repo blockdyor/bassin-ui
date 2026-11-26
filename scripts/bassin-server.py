@@ -894,8 +894,17 @@ def make_handler(state):
             if not target or not target.is_file():
                 self.send_error_text(HTTPStatus.NOT_FOUND, 'Not found')
                 return
+            range_header = self.headers.get('Range')
+            accept_enc = self.headers.get('Accept-Encoding', '')
+            gzip_encoding = False
+            serve_target = target
+            if root == state.ui_dir and not range_header and 'gzip' in accept_enc.lower():
+                gz_candidate = target.with_name(target.name + '.gz')
+                if not gz_candidate.is_symlink() and gz_candidate.is_file():
+                    serve_target = gz_candidate
+                    gzip_encoding = True
             try:
-                fd = os.open(target, os.O_RDONLY | os.O_NOFOLLOW)
+                fd = os.open(serve_target, os.O_RDONLY | os.O_NOFOLLOW)
             except OSError:
                 self.send_error_text(HTTPStatus.NOT_FOUND, 'Not found')
                 return
@@ -905,7 +914,6 @@ def make_handler(state):
                 ctype = mimetypes.guess_type(target.name)[0] or 'application/octet-stream'
                 if target.name.endswith('.status') or target.name.endswith('.log'):
                     ctype = 'text/plain; charset=utf-8'
-                range_header = self.headers.get('Range')
                 start, end, status = 0, total - 1, HTTPStatus.OK
                 if range_header:
                     suffix = RANGE_SUFFIX_RE.fullmatch(range_header.strip())
@@ -938,10 +946,20 @@ def make_handler(state):
                 self.send_response(status)
                 self.send_header('Content-Type', ctype)
                 self.send_header('X-Content-Type-Options', 'nosniff')
-                self.send_header('Accept-Ranges', 'bytes')
+                if gzip_encoding:
+                    self.send_header('Content-Encoding', 'gzip')
+                    self.send_header('Vary', 'Accept-Encoding')
+                else:
+                    self.send_header('Accept-Ranges', 'bytes')
                 if status == HTTPStatus.PARTIAL_CONTENT:
                     self.send_header('Content-Range', f'bytes {start}-{end}/{total}')
-                self.send_header('Cache-Control', 'no-store' if no_store else 'public, max-age=3600')
+                if no_store:
+                    cache_control = 'no-store'
+                elif root == state.ui_dir and rel_path.startswith('assets/'):
+                    cache_control = 'public, max-age=31536000, immutable'
+                else:
+                    cache_control = 'public, max-age=3600'
+                self.send_header('Cache-Control', cache_control)
                 self.send_header('Content-Length', str(length))
                 self.end_headers()
                 if self.command != 'HEAD' and length > 0:

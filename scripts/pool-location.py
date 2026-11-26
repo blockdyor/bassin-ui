@@ -13,18 +13,19 @@ import re
 from pathlib import Path
 import secrets
 import socket
+import struct
 from contextlib import contextmanager
 import time
 from urllib.parse import urlsplit
 
-try:
-    import maxminddb
-except ImportError:  # pragma: no cover - installed via py3-maxminddb in the container image
-    maxminddb = None
-
 CONFIG = Path('/config/ckpool.conf')
 OUTPUT = Path('/www/pool/location.json')
-GEOIP_DB = Path(os.environ.get('BASSIN_GEOIP_DB', '/opt/bassin/geoip.mmdb'))
+GEOIP_DB = Path(os.environ.get('BASSIN_GEOIP_DB', '/opt/bassin/geoip.bin'))
+BGEO_MAGIC = b'BGEO'
+BGEO_VERSION = 1
+BGEO_HEADER = struct.Struct('>4sIII')
+BGEO_V4 = struct.Struct('>IIhh')
+BGEO_V6 = struct.Struct('>16s16shh')
 SV2_PUBKEY_RE = re.compile(
     r'SV2 authority URL path \(stratum2\+tcp://<host>:<port>/([1-9A-HJ-NP-Za-km-z]{32,80})\)(\s+\[new/ephemeral material\])?'
 )
@@ -99,38 +100,62 @@ def rpc(node, method):
     return data['result']
 
 
-def _extract_coords(record):
-    if not isinstance(record, dict):
-        return None
-    location = record.get('location')
-    if not isinstance(location, dict):
-        return None
-    lat, lon = location.get('latitude'), location.get('longitude')
-    if any(type(value) not in (int, float) or not math.isfinite(value) for value in (lat, lon)):
-        return None
-    if abs(lat) > 90 or abs(lon) > 180:
-        return None
-    return float(lat), float(lon)
+def _bgeo_search(file, base_offset, count, rec_struct, key_bytes):
+    lo, hi = 0, count - 1
+    size = rec_struct.size
+    key_len = len(key_bytes)
+    while lo <= hi:
+        mid = (lo + hi) // 2
+        file.seek(base_offset + mid * size)
+        raw = file.read(size)
+        if len(raw) != size:
+            return None
+        start = raw[:key_len]
+        end = raw[key_len:key_len * 2]
+        if key_bytes < start:
+            hi = mid - 1
+        elif key_bytes > end:
+            lo = mid + 1
+        else:
+            lat_e2, lon_e2 = struct.unpack('>hh', raw[key_len * 2:])
+            lat, lon = lat_e2 / 100.0, lon_e2 / 100.0
+            if abs(lat) > 90 or abs(lon) > 180:
+                return None
+            return lat, lon
+    return None
 
 
-def lookup(ip, db_path=None, reader_factory=None):
-    """Resolve a node-reported public IP to approximate coordinates using the local MMDB database."""
+def _lookup_bgeo(db_path, ip_obj):
+    with db_path.open('rb') as file:
+        header = file.read(BGEO_HEADER.size)
+        if len(header) != BGEO_HEADER.size:
+            return None
+        magic, version, v4_count, v6_count = BGEO_HEADER.unpack(header)
+        if magic != BGEO_MAGIC or version != BGEO_VERSION:
+            return None
+        v4_offset = BGEO_HEADER.size
+        if ip_obj.version == 4:
+            if v4_count == 0:
+                return None
+            return _bgeo_search(file, v4_offset, v4_count, BGEO_V4, ip_obj.packed)
+        if v6_count == 0:
+            return None
+        v6_offset = v4_offset + v4_count * BGEO_V4.size
+        return _bgeo_search(file, v6_offset, v6_count, BGEO_V6, ip_obj.packed)
+
+
+def lookup(ip, db_path=None):
+    """Resolve a node-reported public IP to approximate coordinates using the local BGEO table."""
     normalized = public_ip(ip)
     if not normalized:
-        return None
-    open_db = reader_factory or (maxminddb.open_database if maxminddb is not None else None)
-    if open_db is None:
         return None
     target = Path(db_path) if db_path is not None else GEOIP_DB
     if not target.is_file():
         return None
-    mode = getattr(maxminddb, 'MODE_FILE', 0) if reader_factory is None else 0
     try:
-        with open_db(str(target), mode=mode) as reader:
-            record = reader.get(normalized)
-    except (OSError, ValueError, RuntimeError):
+        coords = _lookup_bgeo(target, ipaddress.ip_address(normalized))
+    except (OSError, ValueError, struct.error):
         return None
-    coords = _extract_coords(record)
     if coords is None:
         return None
     lat, lon = coords
