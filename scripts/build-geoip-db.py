@@ -4,13 +4,14 @@ import ipaddress
 import math
 from pathlib import Path
 import struct
-import sys
 
 MAGIC = b'BGEO'
 VERSION = 1
 HEADER_STRUCT = struct.Struct('>4sIII')
 V4_STRUCT = struct.Struct('>IIhh')
 V6_STRUCT = struct.Struct('>16s16shh')
+DEFAULT_INPUT = Path('/tmp/geoip.mmdb')
+DEFAULT_OUTPUT = Path('/geoip.bin')
 
 
 def extract_quantized_coords(record):
@@ -85,10 +86,8 @@ def compile_mmdb(input_path, output_path):
 
 
 def main():
-    if len(sys.argv) != 3:
-        raise SystemExit('Usage: build-geoip-db.py <input.mmdb> <output.bin>')
-    v4_count, v6_count = compile_mmdb(sys.argv[1], sys.argv[2])
-    size_mb = Path(sys.argv[2]).stat().st_size / (1024 * 1024)
+    v4_count, v6_count = compile_mmdb(DEFAULT_INPUT, DEFAULT_OUTPUT)
+    size_mb = DEFAULT_OUTPUT.stat().st_size / (1024 * 1024)
     print(f'Compiled BGEO v1: {v4_count} IPv4 + {v6_count} IPv6 ranges ({size_mb:.2f} MiB)')
 
 

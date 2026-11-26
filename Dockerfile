@@ -9,7 +9,7 @@ RUN apk add --no-cache curl python3 py3-maxminddb \
     && curl --proto '=https' --tlsv1.2 -fsSL "${GEOIP_DB_URL}" -o /tmp/geoip.mmdb.gz \
     && echo "${GEOIP_DB_SHA256}  /tmp/geoip.mmdb.gz" | sha256sum -c - \
     && gunzip -c /tmp/geoip.mmdb.gz > /tmp/geoip.mmdb \
-    && python3 /tmp/build-geoip-db.py /tmp/geoip.mmdb /geoip.bin \
+    && python3 /tmp/build-geoip-db.py \
     && rm -f /tmp/geoip.mmdb.gz /tmp/geoip.mmdb /tmp/build-geoip-db.py \
     && chmod 644 /geoip.bin
 
