@@ -22,10 +22,11 @@ CONFIG = Path('/config/ckpool.conf')
 OUTPUT = Path('/www/pool/location.json')
 GEOIP_DB = Path(os.environ.get('BASSIN_GEOIP_DB', '/opt/bassin/geoip.bin'))
 BGEO_MAGIC = b'BGEO'
-BGEO_VERSION = 1
-BGEO_HEADER = struct.Struct('>4sIII')
-BGEO_V4 = struct.Struct('>IIhh')
-BGEO_V6 = struct.Struct('>16s16shh')
+BGEO_VERSION = 2
+BGEO_HEADER = struct.Struct('>4sIIII')
+BGEO_COORD = struct.Struct('>hh')
+BGEO_V4 = struct.Struct('>IH')
+BGEO_V6 = struct.Struct('>QH')
 SV2_PUBKEY_RE = re.compile(
     r'SV2 authority URL path \(stratum2\+tcp://<host>:<port>/([1-9A-HJ-NP-Za-km-z]{32,80})\)(\s+\[new/ephemeral material\])?'
 )
@@ -100,29 +101,23 @@ def rpc(node, method):
     return data['result']
 
 
-def _bgeo_search(file, base_offset, count, rec_struct, key_bytes):
+def _bgeo_search(file, base_offset, count, rec_struct, target):
     lo, hi = 0, count - 1
     size = rec_struct.size
-    key_len = len(key_bytes)
+    matched_id = 0
     while lo <= hi:
         mid = (lo + hi) // 2
         file.seek(base_offset + mid * size)
         raw = file.read(size)
         if len(raw) != size:
-            return None
-        start = raw[:key_len]
-        end = raw[key_len:key_len * 2]
-        if key_bytes < start:
-            hi = mid - 1
-        elif key_bytes > end:
+            return 0
+        start, coord_id = rec_struct.unpack(raw)
+        if start <= target:
+            matched_id = coord_id
             lo = mid + 1
         else:
-            lat_e2, lon_e2 = struct.unpack('>hh', raw[key_len * 2:])
-            lat, lon = lat_e2 / 100.0, lon_e2 / 100.0
-            if abs(lat) > 90 or abs(lon) > 180:
-                return None
-            return lat, lon
-    return None
+            hi = mid - 1
+    return matched_id
 
 
 def _lookup_bgeo(db_path, ip_obj):
@@ -130,18 +125,31 @@ def _lookup_bgeo(db_path, ip_obj):
         header = file.read(BGEO_HEADER.size)
         if len(header) != BGEO_HEADER.size:
             return None
-        magic, version, v4_count, v6_count = BGEO_HEADER.unpack(header)
-        if magic != BGEO_MAGIC or version != BGEO_VERSION:
+        magic, version, palette_count, v4_count, v6_count = BGEO_HEADER.unpack(header)
+        if magic != BGEO_MAGIC or version != BGEO_VERSION or palette_count == 0:
             return None
-        v4_offset = BGEO_HEADER.size
+        palette_offset = BGEO_HEADER.size
+        v4_offset = palette_offset + palette_count * BGEO_COORD.size
         if ip_obj.version == 4:
             if v4_count == 0:
                 return None
-            return _bgeo_search(file, v4_offset, v4_count, BGEO_V4, ip_obj.packed)
-        if v6_count == 0:
+            coord_id = _bgeo_search(file, v4_offset, v4_count, BGEO_V4, int(ip_obj))
+        else:
+            if v6_count == 0:
+                return None
+            v6_offset = v4_offset + v4_count * BGEO_V4.size
+            coord_id = _bgeo_search(file, v6_offset, v6_count, BGEO_V6, int(ip_obj) >> 64)
+        if coord_id == 0 or coord_id > palette_count:
             return None
-        v6_offset = v4_offset + v4_count * BGEO_V4.size
-        return _bgeo_search(file, v6_offset, v6_count, BGEO_V6, ip_obj.packed)
+        file.seek(palette_offset + (coord_id - 1) * BGEO_COORD.size)
+        raw = file.read(BGEO_COORD.size)
+        if len(raw) != BGEO_COORD.size:
+            return None
+        lat_e1, lon_e1 = BGEO_COORD.unpack(raw)
+        lat, lon = lat_e1 / 10.0, lon_e1 / 10.0
+        if abs(lat) > 90 or abs(lon) > 180:
+            return None
+        return lat, lon
 
 
 def lookup(ip, db_path=None):

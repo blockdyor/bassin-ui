@@ -3,15 +3,16 @@ FROM --platform=$BUILDPLATFORM alpine:3.22 AS geoip
 ARG GEOIP_DB_URL="https://raw.githubusercontent.com/wp-statistics/DbIP-City-lite/91f10c9d0e7e521d4adb36f24f3142c6ded64e5c/dbip-city-lite.mmdb.gz"
 ARG GEOIP_DB_SHA256="b69c625515f636ac92112b71df26bb92a5748f648c79bad124ecd9ba1c97bf4a"
 
-COPY scripts/build-geoip-db.py /tmp/build-geoip-db.py
+WORKDIR /geoip-build
+COPY scripts/build-geoip-db.py /geoip-build/build-geoip-db.py
 
 RUN apk add --no-cache curl python3 py3-maxminddb \
-    && curl --proto '=https' --tlsv1.2 -fsSL "${GEOIP_DB_URL}" -o /tmp/geoip.mmdb.gz \
-    && echo "${GEOIP_DB_SHA256}  /tmp/geoip.mmdb.gz" | sha256sum -c - \
-    && gunzip -c /tmp/geoip.mmdb.gz > /tmp/geoip.mmdb \
-    && python3 /tmp/build-geoip-db.py \
-    && rm -f /tmp/geoip.mmdb.gz /tmp/geoip.mmdb /tmp/build-geoip-db.py \
-    && chmod 644 /geoip.bin
+    && curl --proto '=https' --tlsv1.2 -fsSL "${GEOIP_DB_URL}" -o /geoip-build/geoip.mmdb.gz \
+    && echo "${GEOIP_DB_SHA256}  /geoip-build/geoip.mmdb.gz" | sha256sum -c - \
+    && gunzip -c /geoip-build/geoip.mmdb.gz > /geoip-build/geoip.mmdb \
+    && python3 /geoip-build/build-geoip-db.py \
+    && rm -f /geoip-build/geoip.mmdb.gz /geoip-build/geoip.mmdb /geoip-build/build-geoip-db.py \
+    && chmod 644 /geoip-build/geoip.bin
 
 FROM alpine:3.22
 
@@ -24,7 +25,7 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 COPY web/ /ui/
 RUN find /ui -type f -size +1024c \( -name '*.js' -o -name '*.css' -o -name '*.svg' -o -name '*.geojson' -o -name '*.html' -o -name '*.txt' -o -name '*.md' \) -exec gzip -9 -k {} +
 
-COPY --from=geoip /geoip.bin /opt/bassin/geoip.bin
+COPY --from=geoip /geoip-build/geoip.bin /opt/bassin/geoip.bin
 COPY scripts/pool-location.py /opt/bassin/pool-location.py
 COPY scripts/bassin-server.py /opt/bassin/bassin-server.py
 

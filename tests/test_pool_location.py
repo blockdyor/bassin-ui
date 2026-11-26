@@ -61,33 +61,37 @@ class PoolLocationTest(unittest.TestCase):
 
         # Adjacent IPv4 ranges with matching quantized coordinates should coalesce cleanly.
         v4_ranges = [
-            (int(ipaddress.IPv4Address('8.8.8.0')), int(ipaddress.IPv4Address('8.8.8.127')), 3775, -9782),
-            (int(ipaddress.IPv4Address('8.8.8.128')), int(ipaddress.IPv4Address('8.8.8.255')), 3775, -9782),
-            (int(ipaddress.IPv4Address('1.1.1.0')), int(ipaddress.IPv4Address('1.1.1.255')), 9500, 0),
+            (int(ipaddress.IPv4Address('8.8.8.0')), int(ipaddress.IPv4Address('8.8.8.127')), 378, -978),
+            (int(ipaddress.IPv4Address('8.8.8.128')), int(ipaddress.IPv4Address('8.8.8.255')), 378, -978),
+            (int(ipaddress.IPv4Address('1.1.1.0')), int(ipaddress.IPv4Address('1.1.1.255')), 950, 0),
         ]
+        v6_hi = int(ipaddress.IPv6Address('2606:4700:4700::')) >> 64
         v6_ranges = [
-            (int(ipaddress.IPv6Address('2606:4700:4700::')), int(ipaddress.IPv6Address('2606:4700:4700::ffff')), -3387, 15121),
+            (v6_hi, v6_hi, -339, 1512),
         ]
 
         with tempfile.TemporaryDirectory() as directory:
             db = Path(directory) / 'geoip.bin'
-            v4_cnt, v6_cnt = builder.write_bgeo(db, v4_ranges, v6_ranges)
-            self.assertEqual((v4_cnt, v6_cnt), (2, 1))
+            palette_cnt, v4_cnt, v6_cnt = builder.write_bgeo(db, v4_ranges, v6_ranges)
+            # 3 unique coords; v4 = [1.1.1.0, gap 1.1.2.0, 8.8.8.0, tail 8.8.9.0]; v6 = [2606:..., tail]
+            self.assertEqual((palette_cnt, v4_cnt, v6_cnt), (3, 4, 2))
 
             loc4 = m.lookup('8.8.8.8', db_path=db)
             self.assertEqual(loc4['source'], 'bitcoin-node')
             self.assertEqual(loc4['ip'], '8.8.8.8')
-            self.assertEqual(loc4['latitude'], 37.75)
-            self.assertEqual(loc4['longitude'], -97.82)
+            self.assertEqual(loc4['latitude'], 37.8)
+            self.assertEqual(loc4['longitude'], -97.8)
 
             loc6 = m.lookup('[2606:4700:4700::1111]:8333', db_path=db)
             self.assertEqual(loc6['ip'], '2606:4700:4700::1111')
-            self.assertEqual(loc6['latitude'], -33.87)
-            self.assertEqual(loc6['longitude'], 151.21)
+            self.assertEqual(loc6['latitude'], -33.9)
+            self.assertEqual(loc6['longitude'], 151.2)
 
-            # Out-of-range coordinates and unmapped IPs return None.
+            # Out-of-range coordinates, gap IPs, and unmapped IPs return None.
             self.assertIsNone(m.lookup('1.1.1.1', db_path=db))
+            self.assertIsNone(m.lookup('2.2.2.2', db_path=db))
             self.assertIsNone(m.lookup('203.0.113.1', db_path=db))
+            self.assertIsNone(m.lookup('2606:4700:4701::1', db_path=db))
 
             for non_public in ('127.0.0.1', '192.168.1.2', '10.0.0.1', 'secret.onion'):
                 self.assertIsNone(m.lookup(non_public, db_path=db))
